@@ -1,62 +1,82 @@
-// Simulation.cpp : Diese Datei enthält die Funktion "main". Hier beginnt und endet die Ausführung des Programms.
-//
-
 #include <iostream>
+#include <random>
+#include <fstream>
 
 using namespace std;
 
-constexpr size_t TIME_COUNT = 1000;
+
+// Settings
 constexpr size_t SITES_COUNT = 1000;
+constexpr size_t MONT_CRLO_ITER = 5;
 
 constexpr double MU = 1;
-constexpr double LAMBDA = 1;
+constexpr double LAMBDA = 0;
 
-constexpr double A = 1;
-constexpr double M_0 = 1;
-constexpr double Delta = 1;
-constexpr int n = 10;
+double A = 0.1;
+constexpr double M_0 = 1.0;
+double DELTA = 2.0*sqrt(A);
+constexpr int N = 10;
 
-double action(double positions[SITES_COUNT])
+string FILE_PATH("data.csv");
+
+// Crystal
+double* sites = new double[SITES_COUNT];
+
+static double action()
 {
     double temp_sum = 0;
-    for (size_t i = 0; i < SITES_COUNT-1; i++)
-        temp_sum += M_0 / 2 * pow(positions[i] - positions[i + 1], 2) / A + (pow(MU, 2) / 2 * pow(positions[i], 2) + LAMBDA * pow(positions[i], 4)) * A;
+    for (size_t j = 0; j < SITES_COUNT-1; j++)
+        temp_sum += M_0 / 2 * pow(sites[j] - sites[j+1], 2) / A + (pow(MU, 2) / 2 * pow(sites[j], 2) + LAMBDA * pow(sites[j], 4)) * A;
 
     return temp_sum;
 }
 
 int main()
 {
-    double crystal[TIME_COUNT][SITES_COUNT]{ 0 };
+    // uniform distributor
+    random_device rd;
+    mt19937 gen(rd());
+    uniform_real_distribution<> dis(0.0, 1.0);
 
-    for (size_t j = 0; j < TIME_COUNT; j++) {
-        for (size_t _ = 0; _ < n; _++) {
-            double new_probabilities[SITES_COUNT]{ 0 }; // braucht noch eine uniform probablity distribution
+    ofstream file;
+    file.open(FILE_PATH);
 
-            double d_action = action(new_probabilities) - action(crystal[j]);
-            if (d_action < 0)
-                for (size_t i = 0; i < SITES_COUNT; i++)
-                    crystal[j][i] = new_probabilities[i];
-            
+    // initial ensamble
+    cout << "Initial ensamble: \n";
+    for (size_t j = 0; j < SITES_COUNT-1; j++) {
+        sites[j] = dis(gen);
+        file << sites[j] << ";";
+    }
 
-            bool alles_im_Ramen = true;
-            for (size_t i = 0; i < SITES_COUNT; i++)
-                if (!(crystal[j][i] - Delta <= new_probabilities[i] <= crystal[j][i] + Delta)) alles_im_Ramen = false;
+    // x_0 = x_N
+    sites[SITES_COUNT - 1] = sites[0];
+    file << sites[SITES_COUNT - 1] << ";";
 
-            if (alles_im_Ramen)
-                for (size_t i = 0; i < SITES_COUNT; i++)
-                    crystal[j][i] = new_probabilities[i];
+    // Monte Carlo Iterations
+    for (size_t i = 0; i < MONT_CRLO_ITER; i++) {
+        cout << "Monte Carlo Iteration: " << i << "\n";
+        file << "\n";
+
+        // Markov Chain
+        for (size_t j = 0; j < SITES_COUNT; j++) {
+            for (size_t _ = 0; _ < N; _++) {
+                double position = sites[j];
+                double new_position = dis(gen);
+
+                double old_action = action();
+                sites[j] = new_position;
+                double d_action = action() - old_action;
+                sites[j] = position;
+
+                if (d_action < 0 || (position - DELTA <= new_position && position + DELTA >= new_position))
+                    sites[j] = new_position;
+            }
+            file << sites[j] << ";";
         }
     }
+
+    file.close();
+    delete[] sites;
+
+    return 0;
 }
-
-// Programm ausführen: STRG+F5 oder Menüeintrag "Debuggen" > "Starten ohne Debuggen starten"
-// Programm debuggen: F5 oder "Debuggen" > Menü "Debuggen starten"
-
-// Tipps für den Einstieg: 
-//   1. Verwenden Sie das Projektmappen-Explorer-Fenster zum Hinzufügen/Verwalten von Dateien.
-//   2. Verwenden Sie das Team Explorer-Fenster zum Herstellen einer Verbindung mit der Quellcodeverwaltung.
-//   3. Verwenden Sie das Ausgabefenster, um die Buildausgabe und andere Nachrichten anzuzeigen.
-//   4. Verwenden Sie das Fenster "Fehlerliste", um Fehler anzuzeigen.
-//   5. Wechseln Sie zu "Projekt" > "Neues Element hinzufügen", um neue Codedateien zu erstellen, bzw. zu "Projekt" > "Vorhandenes Element hinzufügen", um dem Projekt vorhandene Codedateien hinzuzufügen.
-//   6. Um dieses Projekt später erneut zu öffnen, wechseln Sie zu "Datei" > "Öffnen" > "Projekt", und wählen Sie die SLN-Datei aus.
