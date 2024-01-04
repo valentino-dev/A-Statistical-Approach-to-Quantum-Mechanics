@@ -9,9 +9,9 @@ using namespace std;
 // Settings
 constexpr size_t SITES_COUNT = 1000; // before (4.16) Fig. 4
 constexpr size_t MONT_CRLO_ITER =
-    50; // N_t = 50 (4.8) --- with exp(-d_action) criteria N_t = 10 is
-        // sufficiant from experience
-constexpr size_t MONT_CRLO_ALGO = 10;         // Resulting from N_t and N_E
+    500; // N_t = 50 (4.8) --- with exp(-d_action) criteria N_t = 10 is
+         // sufficiant from experience
+constexpr size_t MONT_CRLO_ALGO = 10;              // Resulting from N_t and N_E
 constexpr size_t STATISTICAL_INDEPENDENT_ITER = 5; // before (4.9)
 constexpr size_t CONFIGURATIONS =
     MONT_CRLO_ITER * MONT_CRLO_ALGO /
@@ -20,12 +20,12 @@ constexpr size_t CONFIGURATIONS =
 constexpr double MU = 1.0;   // before (4.16) Fig. 4
 constexpr double LAMBDA = 0; // before (4.16) Fig. 4
 
-double A = 1;             // before (4.16) Fig. 4
-constexpr double M_0 = 1; // before (4.16) Fig. 4
-double DELTA = 2 * sqrt(A); // 2*sqrt(a) (4.9)
+double A = 1.0;             // before (4.16) Fig. 4
+constexpr double M_0 = 1;   // before (4.16) Fig. 4
+double DELTA = 0.2 * sqrt(A); // 2*sqrt(a) (4.9)
 constexpr int N = 10;       // n_tilde = 10 (4.10)
 
-string FILE_PATH("data_fig5.csv");
+string FILE_PATH("data_test.csv");
 
 // Crystal
 double *sites = new double[SITES_COUNT];
@@ -33,10 +33,18 @@ double *sites = new double[SITES_COUNT];
 static double action() {
   double temp_sum = 0;
   for (size_t j = 0; j < SITES_COUNT - 1; j++)
-    temp_sum += M_0 / 2 * pow(sites[j] - sites[j + 1], 2) / A +
+    temp_sum += -M_0 / 2 * pow(sites[j] - sites[j + 1], 2) / A +
                 (pow(MU * sites[j], 2) / 2 + LAMBDA * pow(sites[j], 4)) * A;
 
   return temp_sum;
+}
+
+static double alt_action(double *xj) {
+  double temp_sum = M_0 / 2 * pow(*xj - *(xj + 1), 2) / A +
+                    (pow(MU * *xj, 2) / 2 + LAMBDA * pow(*xj, 4)) * A;
+
+  return temp_sum + M_0 / 2 * pow(*(xj - 1) - *xj, 2) / A +
+         (pow(MU * *(xj - 1), 2) / 2 + LAMBDA * pow(*(xj - 1), 4)) * A;
 }
 
 int main() {
@@ -44,9 +52,11 @@ int main() {
        << STATISTICAL_INDEPENDENT_ITER << " Iterations..\n";
 
   // uniform distributor
-  random_device rd;
-  mt19937 gen(rd());
-  uniform_real_distribution<> dis(-0.5, 0.5);
+  // random_device rd;
+  // mt19937 gen(rd());
+  // uniform_real_distribution<> dis(-0.5, 0.5);
+
+  srand(42);
 
   ofstream file;
   file.open(FILE_PATH);
@@ -56,7 +66,8 @@ int main() {
 
     // initial ensamble
     for (size_t j = 0; j < SITES_COUNT - 1; j++) {
-      sites[j] = dis(gen);
+      // sites[j] = dis(gen);
+      sites[j] = ((double)rand() / (double)RAND_MAX - 0.5) * 100;
       file << sites[j] << ";";
     }
 
@@ -75,25 +86,33 @@ int main() {
         file << "\n";
 
       // Markov Chain
-      for (size_t j = 0; j < SITES_COUNT; j++) {
+      for (size_t j = 1; j < SITES_COUNT - 1; j++) {
         for (size_t _ = 0; _ < N; _++) {
           double position = sites[j];
-          double new_position = position + dis(gen);
+          // double new_position = position + dis(gen);
+          double new_position =
+              position + ((double)rand() / (double)RAND_MAX - 0.5);
 
-          double old_action = action();
+          // double old_action = action();
+          // sites[j] = new_position;
+          // double d_action = action() - old_action;
+          // sites[j] = position;
+
+          double old_action = alt_action(&sites[j]);
           sites[j] = new_position;
-          double d_action = action() - old_action;
+          double d_action = alt_action(&sites[j]) - old_action;
           sites[j] = position;
 
-          double r = dis(gen);
+          // double r = dis(gen);
+          double r = position + (double)rand() / (double)RAND_MAX - 0.5;
 
           if (d_action < 0)
             sites[j] = new_position;
-          // else if (position - DELTA <= new_position &&
-          // position + DELTA >= new_position)
-          // sites[j] = new_position;
-          else if (pow(M_E, -d_action) > r)
-            sites[j] = r;
+          else if (position - DELTA <= new_position &&
+                   position + DELTA >= new_position)
+            sites[j] = new_position;
+          // else if (pow(M_E, -d_action) > abs(r))
+          //  sites[j] = r;
         }
         if (i % STATISTICAL_INDEPENDENT_ITER == 0)
           file << sites[j] << ";";
