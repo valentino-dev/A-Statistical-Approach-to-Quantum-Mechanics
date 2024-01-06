@@ -8,27 +8,27 @@
 using namespace std;
 
 // Settings
-constexpr size_t SITES_COUNT = 51; // (N) before (4.16) Fig. 4
+constexpr size_t SITES_COUNT = 800; // (N) before (4.16) Fig. 4
 constexpr size_t MONT_CRLO_ITER =
     50; // N_t = 50 (4.8) --- with exp(-d_action) criteria N_t = 10 is
-         // sufficiant from experience
-constexpr size_t MONT_CRLO_ALGO = 10;              // Resulting from N_t and N_E
+        // sufficiant from experience
+constexpr size_t MONT_CRLO_ALGO = 100;              // Resulting from N_t and N_E
 constexpr size_t STATISTICAL_INDEPENDENT_ITER = 5; // before (4.9)
 int RECORDING_START = 0;
 constexpr size_t CONFIGURATIONS =
     MONT_CRLO_ITER * MONT_CRLO_ALGO /
     STATISTICAL_INDEPENDENT_ITER; // N_E = 10^2 before (4.11)
 
-double MU_SQ = 2.0;       // before (4.16) Fig. 4
+double MU_SQ = 1.0;          // before (4.16) Fig. 4
 constexpr double LAMBDA = 0; // before (4.16) Fig. 4
 double ff = 2;
 
-double A = 0.5;            // before (4.16) Fig. 4
-constexpr double M_0 = 0.5; // before (4.16) Fig. 4
+double A = 1.0;             // before (4.16) Fig. 4
+constexpr double M_0 = 1.0; // before (4.16) Fig. 4
 double DELTA = 2 * sqrt(A); // 2*sqrt(a) (4.9)
 constexpr int N = 10;       // n_tilde = 10 (4.10)
 
-string FILE_PATH("data_fig6.csv");
+string FILE_PATH("data_test.csv");
 constexpr double initial_ensamble_radius = 1;
 
 int actualMessurements = 0;
@@ -37,10 +37,12 @@ int actualMessurements = 0;
 double *sites = new double[SITES_COUNT];
 
 static double Potential1(double *xj) {
-  return (MU_SQ * pow( *xj, 2) / 2 + LAMBDA * pow(*xj, 4));
+  return (MU_SQ * pow(*xj, 2) / 2 + LAMBDA * pow(*xj, 4));
 }
 
-static double Potential2(double *xj) { return LAMBDA * pow(pow(*xj, 2) - ff, 2); }
+static double Potential2(double *xj) {
+  return LAMBDA * pow(pow(*xj, 2) - ff, 2);
+}
 
 static double getTotalAction() {
   double temp_sum = 0;
@@ -79,14 +81,13 @@ int main() {
   printf("Generating %lu configurations every %lu Iterations..\n",
          CONFIGURATIONS, STATISTICAL_INDEPENDENT_ITER);
 
-
   srand(42);
 
   ofstream file;
   file.open(FILE_PATH);
-  for (int i = 0; i < SITES_COUNT-1; i++)
-	  file << i << ";";
-  file << SITES_COUNT-1 << "\n";
+  for (int i = 0; i < SITES_COUNT - 1; i++)
+    file << i << ";";
+  file << SITES_COUNT - 1 << "\n";
 
   clock_t start = clock();
   for (size_t k = 0; k < MONT_CRLO_ALGO; k++) {
@@ -138,7 +139,7 @@ int main() {
 
   double time_spend = (double)(end - start) / CLOCKS_PER_SEC;
   double benchmark = MONT_CRLO_ITER * MONT_CRLO_ALGO * SITES_COUNT / time_spend;
-  printf("%6.3fs spend. Benchmark: %6.3f sites/s.\n", time_spend, benchmark);
+  printf("%6.3fs spend. Benchmark: %e sites/s.\n", time_spend, benchmark);
   printf("%d", actualMessurements);
   return 0;
 }

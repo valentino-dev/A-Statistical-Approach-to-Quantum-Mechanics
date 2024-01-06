@@ -1,0 +1,24 @@
+#include <stdio.h>
+#include <time.h>
+
+int main() {
+  //int MCS = 100;	// Monte Carlo Simulations
+  //int MCI = 50;		// Monte Carlo Iterations
+  //int N = 1000;		// Sites Count
+  //int n = 10;		// Hits per Site
+  //int SII = 5;		// Statistical Independent Iterations
+  //int RS = 0;		// Recording Start
+
+  //char FILE_PATH[] = "data_fig4.csv";
+
+  //double *sites;
+  //sites = (double *)malloc(MCS*N*sizeof(double));
+
+  char a = 8;
+  int b = (int)b;
+  printf("%d\n", b);
+
+  //free(sites);
+
+  return 0;
+}
