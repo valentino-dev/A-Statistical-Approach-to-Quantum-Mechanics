@@ -6,19 +6,26 @@
 
 // setup settings
 __device__ __constant__ int d_n = 10; // Hits per Site
+__device__ __constant__ int d_xjPerThread = 4;
+int h_xjPerThread = 4;
 __device__ __constant__ double d_a = 1.0;
 __device__ __constant__ double d_lambda = 0.0;
 __device__ __constant__ double d_mu_sq = 1.0;
 __device__ __constant__ double d_f_sq = 2.0;
 __device__ __constant__ double d_m0 = 1.0;
-int runs = 1 << 2;	// Runs (increase to yield more data)
-int SII = 5;    	// Statistical Independent Iterations
-int RS = 10;    	// Recording Start
+int runs = 4; // Runs (increase to yield more data)
+int SII = 5;  // Statistical Independent Iterations
+int RS = 10;  // Recording Start
+
+// RTX 2060 super has 34 SMs
+// 1 Warp are 32 Threads, 64 Warps per SM at maximum
+// So 32*64*34=69,632 Threads can be active at once
 
 // Device dependent settings: do not change
-int MCS = 1 << 10;	// 1024 Monte Carlo Simulations
-int MCI = 500;		// 500 Monte Carlo Iterations
-int N = 1 << 9;		// 512 degrees of freedom
+// int MCS = 34*4*1<<3; // 1024 Monte Carlo Simulations
+int MCS = 1 << 10;
+int MCI = 500;  // 500 Monte Carlo Iterations
+int N = 1 << 9; // 512 degrees of freedom
 
 int size = MCS * N;
 
@@ -65,11 +72,12 @@ __global__ void Simulate(double *sites, double iterations, curandState *state) {
   curandState *seed = state + idx;
   if (threadIdx.x != 0 && threadIdx.x != blockDim.x - 1)
     for (int _ = 0; _ < iterations; _++) {
-      // if (idx == 1)
-      //  printf("Iteration: %d\n", _);
       for (int __ = 0; __ < d_n; __++) {
-        step(sites + idx * 2, seed);
-        step(sites + idx * 2 + 1, seed);
+        for (int i = 0; i < d_xjPerThread; i++) {
+          if (idx == 1)				// without this
+            printf("%d",i);			// it does not work??? wtf
+          step(sites + idx * 2 + i, seed);
+        }
       }
       __syncthreads();
     }
@@ -100,7 +108,7 @@ int main() {
   cudaDeviceSynchronize();
 
   // setup kernel configs
-  int threadsPerBlock = int(N / 2);
+  int threadsPerBlock = int(N / h_xjPerThread);
   int blocksPerGrid = MCS;
   printf("Threads per block: %d; Blocks per grid: %d\n", threadsPerBlock,
          blocksPerGrid);
@@ -114,7 +122,7 @@ int main() {
   clock_t start = clock();
   for (int k = 0; k < runs; k++) {
     // initialise host sites and rand
-    printf("Initialising host sites..\n");
+    // printf("Initialising host sites..\n");
     h_sites = (double *)malloc(size * sizeof(double));
     for (size_t i = 0; i < size; i++) {
       h_sites[i] = ((double)rand() / RAND_MAX - 0.5) * 2;
@@ -124,14 +132,14 @@ int main() {
     cudaMemcpy(d_sites, h_sites, size, cudaMemcpyHostToDevice);
 
     // wait until the Simulation comes to equilibrium and take first messurement
-    printf("Reaching equilibrium..\n");
+    // printf("Reaching equilibrium..\n");
     Simulate<<<MCS, threadsPerBlock>>>(d_sites, RS, d_state);
     cudaDeviceSynchronize();
     cudaMemcpy(h_sites, d_sites, size, cudaMemcpyDeviceToHost);
     messure(data_file, h_sites);
 
-    printf("Messuring..\n");
-    // Simulate and take messurements
+    // printf("Messuring..\n");
+    //  Simulate and take messurements
     size_t iterations = MCI / SII - 1;
     for (size_t i = 0; i < iterations; i++) {
       Simulate<<<blocksPerGrid, threadsPerBlock>>>(d_sites, SII, d_state);
@@ -140,7 +148,8 @@ int main() {
       cudaMemcpy(h_sites, d_sites, size, cudaMemcpyDeviceToHost);
       messure(data_file, h_sites);
 
-      printf("(%3.2lf %%)\n", (i + 1) * 100.0 / iterations);
+      printf("(%3.2lf %%)\n",
+             (i + 1 + k * iterations) * 100.0 / iterations / runs);
     }
   }
   clock_t end = clock();
