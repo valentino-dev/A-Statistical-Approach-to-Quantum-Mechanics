@@ -8,11 +8,11 @@
 using namespace std;
 
 // Settings
-constexpr size_t SITES_COUNT = 800; // (N) before (4.16) Fig. 4
+constexpr size_t SITES_COUNT = 1026; // (N) before (4.16) Fig. 4
 constexpr size_t MONT_CRLO_ITER =
     50; // N_t = 50 (4.8) --- with exp(-d_action) criteria N_t = 10 is
         // sufficiant from experience
-constexpr size_t MONT_CRLO_ALGO = 100;              // Resulting from N_t and N_E
+constexpr size_t MONT_CRLO_ALGO = 1;              // Resulting from N_t and N_E
 constexpr size_t STATISTICAL_INDEPENDENT_ITER = 5; // before (4.9)
 int RECORDING_START = 0;
 constexpr size_t CONFIGURATIONS =
@@ -29,7 +29,7 @@ double DELTA = 2 * sqrt(A); // 2*sqrt(a) (4.9)
 constexpr int N = 10;       // n_tilde = 10 (4.10)
 
 string FILE_PATH("data_test.csv");
-constexpr double initial_ensamble_radius = 1;
+constexpr double initial_ensamble_radius = 10;
 
 int actualMessurements = 0;
 
@@ -128,6 +128,7 @@ int main() {
             sites[j] = new_xj;
         }
       }
+      printf("S: %lf", getTotalAction());
       if (i >= RECORDING_START && (i + 1) % STATISTICAL_INDEPENDENT_ITER == 0)
         messure(&file);
     }
