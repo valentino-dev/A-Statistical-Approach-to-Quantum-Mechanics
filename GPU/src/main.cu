@@ -11,16 +11,16 @@ __device__ __constant__ size_t d_n = 10; // Hits per Site
 __device__ __constant__ size_t d_xjPerThread = 1 << 1;
 size_t h_xjPerThread = 1 << 1;
 
-__device__ __constant__ double d_a = 1.0;
+__device__ __constant__ double d_a = 0.5;
 __device__ __constant__ double d_lambda = 0.0;
-__device__ __constant__ double d_mu_sq = 1.0;
+__device__ __constant__ double d_mu_sq = 2.0;
 __device__ __constant__ double d_f_sq = 2.0;
-__device__ __constant__ double d_m0 = 1.0;
+__device__ __constant__ double d_m0 = 0.5;
 __device__ long seed = 0;
-size_t runs = 4; // Runs (increase to yield more data)
+size_t runs = 1; // Runs (increase to yield more data)
 size_t SII = 5;  // Statistical Independent Iterations
-size_t RS = 0;   // Recording Start
-char DATA_PATH[] = "data/data_fig4.csv";
+size_t RS = 50;   // Recording Start
+char DATA_PATH[] = "data/data_fig6.csv";
 
 // Guide for Device Setting:
 // RTX 2060 super has 34 SMs
@@ -30,20 +30,21 @@ char DATA_PATH[] = "data/data_fig4.csv";
 
 // Device dependent settings: do not change
 //size_t MCS = 34 * 4 * 1 << 0; 		// 34SMs*4BlocksPerSM=136Blocks: Monte Carlo Simulations => 69,632 Threads => 1 Full GPU
-size_t MCS = 1;
-size_t MCI = 500;			// 500MCI/5SII=100 Configurations
-size_t threadsPerBlock = 1 << 2; 	// 512 threads per block => 4 Blocks = 2048 Threads = 1 Full SM
+size_t MCS = 10;
+size_t MCI = 50;			// 500MCI/5SII=100 Configurations
+size_t threadsPerBlock = 25; 	// 512 threads per block => 4 Blocks = 2048 Threads = 1 Full SM
 
 size_t blocksPerGrid = MCS;
 
 // to increase N, use h_xjPerThread
 size_t N = h_xjPerThread * (threadsPerBlock) + 2;
 
-__device__ size_t d_N = (1 << 3) * (1 << 9) + 2;
+//__device__ size_t d_N = (1 << 3) * (1 << 9) + 2;
+__device__ size_t d_N = 52;
 
 size_t length = MCS * N;
 size_t size = length * sizeof(double);
-size_t total_configurations = (MCI - RS) * MCS / SII;
+size_t total_configurations = MCI * MCS * runs / SII;
 
 #define gpuErrchk(ans)                                                         \
 { gpuAssert((ans), __FILE__, __LINE__); }
@@ -66,7 +67,7 @@ __device__ double rand_x(curandState *state, double min, double max) {
 }
 
 __device__ double potential_1(double *x) {
-	return (d_mu_sq * *x * *x * 0.5 + d_lambda * *x * *x * *x * *x);
+	return (d_mu_sq * pow(*x, 2) * 0.5 + d_lambda * pow(*x, 4));
 }
 
 __device__ double potential_2(double *x) {
@@ -74,8 +75,9 @@ __device__ double potential_2(double *x) {
 }
 
 __device__ double calc_S_of_xj(double x, double *ptr) {
-	return d_m0 * 0.5 * (pow(x - *(ptr + 1), 2) + pow(*(ptr - 1) - x, 2)) / d_a +
+	return d_m0 * 0.5 * (pow(*(ptr + 1) - x, 2) + pow(x - *(ptr - 1), 2)) / d_a +
 		d_a * (potential_1(&x) + potential_1(ptr - 1));
+	//return d_m0 * 0.5 * pow(x - *(ptr + 1), 2) / d_a + d_a * potential_1(&x) + d_m0 * 0.5 * pow(*(ptr - 1) - x, 2) / d_a + d_a * potential_1(ptr - 1);
 }
 
 __device__ double calc_tot_S(double *sites) {
@@ -92,23 +94,23 @@ __device__ double calc_dS(double *xptr, double *new_xptr) {
 
 __device__ void step(double *xptr, curandState *local_state) {
 	double delta = 2 * sqrt(d_a);
-	double new_xptr = rand_x(local_state, *xptr - delta, *xptr + delta);
-	double dS = calc_dS(xptr, &new_xptr);
+	double new_x = rand_x(local_state, *xptr - delta, *xptr + delta);
+	double dS = calc_dS(xptr, &new_x);
 	// double r = rand_x(local_state, 0, 1);
 	// double edS = pow(M_E, -dS);
 	if (dS < 0 || pow(M_E, -dS) > rand_x(local_state, 0, 1))
-		*xptr = new_xptr;
+		*xptr = new_x;
 }
 
 // cuda c kernel
 __global__ void Simulate(double *sites, int iterations, curandState *state) {
-	printf("Kernal launched");
 	int idx = blockDim.x * blockIdx.x + threadIdx.x;
 	for (int _ = 0; _ < iterations; _++) {
-		for (int __ = 0; __ < d_n; __++) {
-			for (int i = 0; i < d_xjPerThread; i++) {
-				int site = idx * d_xjPerThread + i + 1;
+		for (int i = 0; i < d_xjPerThread; i++) {
+			for (int __ = 0; __ < d_n; __++) {
+				int site = idx * d_xjPerThread + i + 1 + blockIdx.x * 2;
 				step(sites + site, state + idx);
+				printf("site %d, idx %d, paralel %d\n", site, idx, i);
 			}
 		}
 		__syncthreads();
@@ -117,7 +119,9 @@ __global__ void Simulate(double *sites, int iterations, curandState *state) {
 	}
 }
 
-__global__ void print_S(double *sites) {}
+//__global__ void print_S(double *sites) {
+//printf("S: %lf")
+//}
 
 __global__ void print_sites(double *sites) {
 	int idx = blockDim.x * blockIdx.x + threadIdx.x;
@@ -129,7 +133,22 @@ void messure(FILE *file, double *values) {
 		for (size_t k = 0; k < N - 1; k++){
 			fprintf(file, "%lf;", values[i * N + k]);
 		}
-		fprintf(file, "%lf\n", values[i * N + N - 1]);
+		fprintf(file, "%lf\n", values[(i + 1) * N - 1]);
+	}
+}
+
+__global__ void initial_ensamble(double *sites, curandState *state){
+	int idx = blockDim.x * blockIdx.x + threadIdx.x;
+	for (int i = 0; i < d_xjPerThread; i++) {
+		sites[idx * d_xjPerThread + i + 1 + blockIdx.x * 2] = rand_x(state + idx, -1, 1);
+	}
+	if (idx == blockDim.x * blockIdx.x){
+		int site = blockDim.x * blockIdx.x + blockIdx.x * 2;
+		printf("start site %d: %lf, \n", site, sites[site]);
+	}
+	if (idx == blockDim.x * (blockIdx.x + 1) - 1){
+		int site = blockDim.x * (blockIdx.x + 1) + 1 + blockIdx.x * 2;
+		printf("end site %d: %lf, \n", site, sites[site]);
 	}
 }
 
@@ -164,32 +183,35 @@ int main() {
 	double *h_sites, *d_sites;
 	gpuErrchk(cudaMallocHost((void **)&h_sites, size));
 	gpuErrchk(cudaMalloc((void **)&d_sites, size));
+	gpuErrchk(cudaMemset(h_sites, 0, size));
+	gpuErrchk(cudaMemset(d_sites, 0, size));
 	//h_sites = (double *)malloc(size);
 
 
 	clock_t start = clock();
 	for (int k = 0; k < runs; k++) {
 		// initialise host sites and rand
-		for (int i = 0; i < length; i++) {
-			*(h_sites + i) = ((double)rand() / RAND_MAX - 0.5) * 20;
+		for (int i = 0; i < blocksPerGrid; i++){
+			h_sites[i*N] = (double)(rand())/(double)(RAND_MAX)-0.5;
+			h_sites[(i+1)*N-1] = h_sites[i*N];
+			printf("idx: %d, %d\n", i*N, (i+1)*N-1);
 		}
-
-		// copy sites from host to device
 		gpuErrchk(cudaMemcpy(d_sites, h_sites, size, cudaMemcpyHostToDevice));
+		initial_ensamble<<<blocksPerGrid, threadsPerBlock>>>(d_sites, d_state);
 
 		// wait until the Simulation comes to equilibrium and take first messurement
 		Simulate<<<blocksPerGrid, threadsPerBlock>>>(d_sites, RS, d_state);
 		//printf("cuda c err: %s\n", cudaGetLastError());
-		cudaGetLastError();
-		gpuErrchk(cudaDeviceSynchronize());
-		gpuErrchk(cudaMemcpy(h_sites, d_sites, size, cudaMemcpyDeviceToHost));
-		messure(data_file, h_sites);
+		//cudaGetLastError();
+		//gpuErrchk(cudaDeviceSynchronize());
+		//gpuErrchk(cudaMemcpy(h_sites, d_sites, size, cudaMemcpyDeviceToHost));
+		//messure(data_file, h_sites);
 
-		size_t iterations = MCI / SII - 1;
+		size_t iterations = MCI / SII;
 		for (size_t i = 0; i < iterations; i++) {
-			Simulate<<<blocksPerGrid, threadsPerBlock>>>(d_sites, SII, d_state);
 			gpuErrchk(cudaDeviceSynchronize());
 			gpuErrchk(cudaMemcpy(h_sites, d_sites, size, cudaMemcpyDeviceToHost));
+			Simulate<<<blocksPerGrid, threadsPerBlock>>>(d_sites, SII, d_state);
 			messure(data_file, h_sites);
 			printf("(%3.2lf %%)\n",
 					(i + 1 + k * iterations) * 100.0 / iterations / runs);
@@ -197,6 +219,7 @@ int main() {
 	}
 	clock_t end = clock();
 	fclose(data_file);
+	gpuErrchk(cudaDeviceSynchronize());
 
 	// free memory
 	printf("Free memory..\n");

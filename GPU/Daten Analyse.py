@@ -4,7 +4,7 @@ import pandas as pd
 
 #from olib import *
 # a=fig4, b=fig5, ..
-exec = "b"
+exec = "c"
 
 
 # fig, ax = plt.subplots(4, 4)
@@ -46,27 +46,46 @@ def b():
     fig.savefig("fig5.pdf", dpi=500)
 
 def c():
-    FILE_PATH = "data_fig6.csv"
+    #FILE_PATH = "~/Git/A-Statistical-Approach-to-Quantum-Mechanics/CPU/Simulation/Simulation/data_fig6.csv"
+    FILE_PATH = "data/data_fig6.csv"
     Monte_Carlo_Iterations = 100
     MCPerCALC = 10
     Iterations = int(Monte_Carlo_Iterations/MCPerCALC)
-    x_sq = np.zeros(Iterations)
-    x_x_tao = x_sq
-    x_quad = x_sq
-    Delta_E = x_sq
+    x_sq_mean = np.zeros((Iterations))
+    x_quad_mean = x_sq_mean
+    m = 0.5
+    Lambda = 0
+    a = 0.5
+    deltatao = 1
+    tao = np.arange(5)
+    E0 = np.zeros(tao.shape[0])
+    zero_deltatao_mean = np.zeros((Iterations, tao.shape[0]))
+    zero_tao_mean = np.zeros((Iterations, tao.shape[0]))
+
 
     fig, ax = plt.subplots()
     for i in range(Iterations):
         data = pd.read_csv(FILE_PATH, sep=";", skiprows=np.delete(np.arange(Monte_Carlo_Iterations), np.arange(i*MCPerCALC, (i+1)*MCPerCALC, 1))).to_numpy()
-        x_sq[i] = (data.flatten()**2).mean()
-        x_quad[i] = (data.flatten()**4).mean()
-        
+        for k in range(tao.shape[0]):
+            zero_deltatao_mean[i, k] = np.abs(data[:,0]*data[:, int(tao[k] + deltatao)]).mean()
+            print("0: ", data[:, 0])
+            print("0: ", data[:, tao[k]])
+            zero_tao_mean[i, k] = np.abs(data[:,0]*data[:, tao[k]]).mean()
+        x_sq_mean[i] = (data.flatten()**2).mean()
+        x_quad_mean[i] = (data.flatten()**4).mean()
 
 
-    x_sq_mean = x_sq.mean()
-    
-    x_quad_mean = x_quad.mean()
-    print(x_sq_mean)
+
+    E0 = m**2*x_sq_mean+3*Lambda*x_quad_mean
+    E0 = E0.mean()
+    E1 = -1/deltatao*np.log(zero_deltatao_mean/zero_tao_mean)+E0
+    E1 = E1.mean(axis=0)
+    print("zero_deltatao_mean ", zero_deltatao_mean)
+    print(zero_tao_mean)
+    print("x mean ", x_sq_mean.mean())
+    print("E0 ", E0)
+    print("E1 ", E1)
+    print("E1 - E0 ", E1 - E0)
 
 def d():
     N = 50
