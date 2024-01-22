@@ -8,27 +8,27 @@
 using namespace std;
 
 // Settings
-constexpr size_t SITES_COUNT = 1026; // (N) before (4.16) Fig. 4
+constexpr size_t SITES_COUNT = 51; // (N) before (4.16) Fig. 4
 constexpr size_t MONT_CRLO_ITER =
-    50; // N_t = 50 (4.8) --- with exp(-d_action) criteria N_t = 10 is
+    550; // N_t = 50 (4.8) --- with exp(-d_action) criteria N_t = 10 is
         // sufficiant from experience
 constexpr size_t MONT_CRLO_ALGO = 1;              // Resulting from N_t and N_E
 constexpr size_t STATISTICAL_INDEPENDENT_ITER = 5; // before (4.9)
-int RECORDING_START = 0;
+int RECORDING_START = 50;
 constexpr size_t CONFIGURATIONS =
     MONT_CRLO_ITER * MONT_CRLO_ALGO /
     STATISTICAL_INDEPENDENT_ITER; // N_E = 10^2 before (4.11)
 
-double MU_SQ = 1.0;          // before (4.16) Fig. 4
+double MU_SQ = 2.0;          // before (4.16) Fig. 4
 constexpr double LAMBDA = 0; // before (4.16) Fig. 4
 double ff = 2;
 
-double A = 1.0;             // before (4.16) Fig. 4
-constexpr double M_0 = 1.0; // before (4.16) Fig. 4
+double A = 0.5;             // before (4.16) Fig. 4
+constexpr double M_0 = 0.5; // before (4.16) Fig. 4
 double DELTA = 2 * sqrt(A); // 2*sqrt(a) (4.9)
 constexpr int N = 10;       // n_tilde = 10 (4.10)
 
-string FILE_PATH("data_test.csv");
+string FILE_PATH("data_fig6.csv");
 constexpr double initial_ensamble_radius = 10;
 
 int actualMessurements = 0;
@@ -117,7 +117,7 @@ int main() {
       }
 
       // Markov Chain
-      for (size_t j = 1; j < SITES_COUNT - 1; j++) {
+      for (size_t j = 0; j < SITES_COUNT - 1; j++) {
         for (size_t _ = 0; _ < N; _++) {
           double new_xj = rand_x(sites[j] - DELTA, sites[j] + DELTA);
           double d_action = getDAction(&sites[j], &new_xj);
@@ -129,7 +129,7 @@ int main() {
         }
       }
       printf("S: %lf", getTotalAction());
-      if (i >= RECORDING_START && (i + 1) % STATISTICAL_INDEPENDENT_ITER == 0)
+      if (i-1 >= RECORDING_START && (i + 1) % STATISTICAL_INDEPENDENT_ITER == 0)
         messure(&file);
     }
   }
