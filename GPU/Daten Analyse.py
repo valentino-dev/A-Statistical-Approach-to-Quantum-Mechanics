@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-#from olib import *
+from olib import *
 # a=fig4, b=fig5, ..
 exec = "c"
 
@@ -47,45 +47,65 @@ def b():
 
 def c():
     #FILE_PATH = "~/Git/A-Statistical-Approach-to-Quantum-Mechanics/CPU/Simulation/Simulation/data_fig6.csv"
-    FILE_PATH = "data/data_fig6.csv"
-    Monte_Carlo_Iterations = 100
+    FILE_PATH = "~/Git/A-Statistical-Approach-to-Quantum-Mechanics/GPU/data/data_fig6.csv"
+    totalConfigurations = 2720
+    configurations_to_use = 2000
     MCPerCALC = 10
-    Iterations = int(Monte_Carlo_Iterations/MCPerCALC)
-    x_sq_mean = np.zeros((Iterations))
-    x_quad_mean = x_sq_mean
+    Iterations = int(configurations_to_use/MCPerCALC)
     m = 0.5
     Lambda = 0
     a = 0.5
     deltatao = 1
-    tao = np.arange(5)
-    E0 = np.zeros(tao.shape[0])
-    zero_deltatao_mean = np.zeros((Iterations, tao.shape[0]))
-    zero_tao_mean = np.zeros((Iterations, tao.shape[0]))
-
+    result = {"zero_tao": [], "zero_tao_err": [], "E0": [], "E1": [], "E1-E0": []}
+    err = {"zero_tao": []}
+    tao = np.arange(0, 4)
 
     fig, ax = plt.subplots()
     for i in range(Iterations):
-        data = pd.read_csv(FILE_PATH, sep=";", skiprows=np.delete(np.arange(Monte_Carlo_Iterations), np.arange(i*MCPerCALC, (i+1)*MCPerCALC, 1))).to_numpy()
-        for k in range(tao.shape[0]):
-            zero_deltatao_mean[i, k] = np.abs(data[:,0]*data[:, int(tao[k] + deltatao)]).mean()
-            print("0: ", data[:, 0])
-            print("0: ", data[:, tao[k]])
-            zero_tao_mean[i, k] = np.abs(data[:,0]*data[:, tao[k]]).mean()
-        x_sq_mean[i] = (data.flatten()**2).mean()
-        x_quad_mean[i] = (data.flatten()**4).mean()
+        data = pd.read_csv(FILE_PATH, sep=";", skiprows=np.delete(np.arange(totalConfigurations), np.arange(i*MCPerCALC, (i+1)*MCPerCALC, 1))).to_numpy()
 
+        zero_tao_bin = []
+        zero_tao_bin_err = []
+        # zero_tao.shape = (bins, tao)
+        for i in tao:
+            zero_tao_bin.append((data * np.roll(data, i, axis=1)).mean(axis=(0,1)))
+        result["zero_tao"].append(zero_tao_bin)
+        zero_tao_bin = np.array(zero_tao_bin)
+        #result["E0"].append(m**2*zero_tao_bin+Lambda*zero_tao_bin)
+        #result["E1-E0"].append(-np.log(np.roll(zero_tao_bin, -deltatao)/zero_tao_bin)/deltatao)
 
+    for key in result:
+        result[key].append(np.array(result[key]).mean(axis=0))
+        print(f"{key}: {result[key][-1]}")
 
-    E0 = m**2*x_sq_mean+3*Lambda*x_quad_mean
-    E0 = E0.mean()
-    E1 = -1/deltatao*np.log(zero_deltatao_mean/zero_tao_mean)+E0
-    E1 = E1.mean(axis=0)
-    print("zero_deltatao_mean ", zero_deltatao_mean)
-    print(zero_tao_mean)
-    print("x mean ", x_sq_mean.mean())
-    print("E0 ", E0)
-    print("E1 ", E1)
-    print("E1 - E0 ", E1 - E0)
+    #print("test2", np.array(result["zero_tao"]))
+    #f = np.log(result["zero_tao"])
+    f = np.array(result["zero_tao"])
+    #print("test ", f[:,-1])
+    for i in tao:
+        err["zero_tao"].append((((f[-1, i]-f)[:-1, i])**2).mean()**(1/2)/np.abs(f[-1, i]))
+    
+
+    print("Uncertainties:")
+    for key in err:
+        print(f"{key}: {err[key]}")
+
+    X = tao
+    Xerr = np.zeros_like(tao)
+    #Y = np.array(result["zero_tao"][-1])
+    Y = np.log10(result["zero_tao"][-1])
+    #Yerr = np.abs(1e-2/np.array(result["zero_tao"][-1]))
+    #Yerr = np.array(err["zero_tao"])
+    Yerr = np.abs(np.array(err["zero_tao"])/np.array(result["zero_tao"])[-1]/np.log(10))
+    #Yerr = np.abs(np.log(err["zero_tao"]))
+    ax, model = plotData(ax, X, Xerr, Y, Yerr, polyfit=1, fmt="x", label="Daten")
+    model.printParameter()
+    #ax = setSpace(ax, X, Y)
+    
+    #ax.set_yscale("log")
+    print("plotting")
+    plt.show()
+
 
 def d():
     N = 50

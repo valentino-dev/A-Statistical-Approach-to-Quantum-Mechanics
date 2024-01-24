@@ -17,7 +17,7 @@ __device__ __constant__ double d_mu_sq = 2.0;
 __device__ __constant__ double d_f_sq = 2.0;
 __device__ __constant__ double d_m0 = 0.5;
 __device__ long seed = 0;
-size_t runs = 1; // Runs (increase to yield more data)
+size_t runs = 2; // Runs (increase to yield more data)
 size_t SII = 5;  // Statistical Independent Iterations
 size_t RS = 50;   // Recording Start
 char DATA_PATH[] = "data/data_fig6.csv";
@@ -29,10 +29,10 @@ char DATA_PATH[] = "data/data_fig6.csv";
 // 512 or 1024 Threads per Block are ideal, though at 1024 it is harder to start
 
 // Device dependent settings: do not change
-//size_t MCS = 34 * 4 * 1 << 0; 		// 34SMs*4BlocksPerSM=136Blocks: Monte Carlo Simulations => 69,632 Threads => 1 Full GPU
-size_t MCS = 10;
+size_t MCS = 34 * 4 * (1 << 0); 		// 34SMs*4BlocksPerSM=136Blocks: Monte Carlo Simulations => 69,632 Threads => 1 Full GPU
+//size_t MCS = 10;
 size_t MCI = 50;			// 500MCI/5SII=100 Configurations
-size_t threadsPerBlock = 1<<4; 	// 512 threads per block => 4 Blocks = 2048 Threads = 1 Full SM
+size_t threadsPerBlock = 1<<9; 	// 512 threads per block => 4 Blocks = 2048 Threads = 1 Full SM
 
 size_t blocksPerGrid = MCS;
 
@@ -74,31 +74,29 @@ __device__ double potential_2(double *x) {
 	return d_lambda * pow(*x * *x - d_f_sq, 2);
 }
 
-__device__ double calc_S_of_xj(double x, double *ptr) {
-	return d_m0 * 0.5 * (pow(*(ptr + 1) - x, 2) + pow(x - *(ptr - 1), 2)) / d_a +
+__device__ double calc_S_of_xj(double x, double *ptr, double *previous_site, double *following_site) {
+	return d_m0 * 0.5 * (pow(*following_site - x, 2) + pow(x - *previous_site, 2)) / d_a +
 		d_a * (potential_1(&x) + potential_1(ptr - 1));
 	//return d_m0 * 0.5 * pow(x - *(ptr + 1), 2) / d_a + d_a * potential_1(&x) + d_m0 * 0.5 * pow(*(ptr - 1) - x, 2) / d_a + d_a * potential_1(ptr - 1);
 }
 
-__device__ double calc_tot_S(double *sites) {
-	double temp = 0;
-	for (size_t i = 0; i < d_N / 2 - 1; i++) {
-		temp += calc_S_of_xj(sites[i * 2 + 1], sites + i * 2);
-	}
-	return temp;
+//__device__ double calc_tot_S(double *sites) {
+	//double temp = 0;
+	//for (size_t i = 0; i < d_N / 2 - 1; i++) {
+		//temp += calc_S_of_xj(sites[i * 2 + 1], sites + i * 2);
+	//}
+	//return temp;
+//}
+
+__device__ double calc_dS(double *xptr, double *previous_site, double *following_site, double *newx_ptr) {
+	return calc_S_of_xj(*newx_ptr, xptr, previous_site, following_site) - calc_S_of_xj(*xptr, xptr, previous_site, following_site);
 }
 
-__device__ double calc_dS(double *xptr, double *newx_ptr) {
-	return calc_S_of_xj(*newx_ptr, xptr) - calc_S_of_xj(*xptr, xptr);
-}
-
-__device__ void step(double *sites, int site, curandState *local_state) {
-
+__device__ void step(double *sites, int site, int previous_site, int following_site, curandState *local_state) {
+	double *xptr = sites+site;
 	double delta = 2 * sqrt(d_a);
 	double new_x = rand_x(local_state, *xptr - delta, *xptr + delta);
-	double dS = calc_dS(xptr, &new_x);
-	// double r = rand_x(local_state, 0, 1);
-	// double edS = pow(M_E, -dS);
+	double dS = calc_dS(xptr, sites+previous_site, sites+following_site, &new_x);
 	if (dS < 0 || pow(M_E, -dS) > rand_x(local_state, 0, 1))
 		*xptr = new_x;
 }
@@ -106,11 +104,14 @@ __device__ void step(double *sites, int site, curandState *local_state) {
 // cuda c kernel
 __global__ void Simulate(double *sites, int iterations, curandState *state) {
 	int idx = blockDim.x * blockIdx.x + threadIdx.x;
+
 	for (int _ = 0; _ < iterations; _++) {
 		for (int i = 0; i < d_xjPerThread; i++) {
 			int site = idx * d_xjPerThread + i;
+			int previous_site = (threadIdx.x * d_xjPerThread + i - 1) % (blockDim.x * d_xjPerThread) + blockDim.x * d_xjPerThread * blockIdx.x;
+			int following_site = (threadIdx.x * d_xjPerThread + i + 1) % (blockDim.x * d_xjPerThread) + blockDim.x * d_xjPerThread * blockIdx.x;
 			for (int __ = 0; __ < d_n; __++) {
-				step(sites, site, state + idx);
+				step(sites, site, previous_site, following_site, state + idx);
 				//printf("site %d, idx %d, paralel %d\n", site, idx, i);
 			}
 		}
