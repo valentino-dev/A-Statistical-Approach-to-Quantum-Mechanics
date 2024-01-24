@@ -32,12 +32,12 @@ char DATA_PATH[] = "data/data_fig6.csv";
 //size_t MCS = 34 * 4 * 1 << 0; 		// 34SMs*4BlocksPerSM=136Blocks: Monte Carlo Simulations => 69,632 Threads => 1 Full GPU
 size_t MCS = 10;
 size_t MCI = 50;			// 500MCI/5SII=100 Configurations
-size_t threadsPerBlock = 25; 	// 512 threads per block => 4 Blocks = 2048 Threads = 1 Full SM
+size_t threadsPerBlock = 1<<4; 	// 512 threads per block => 4 Blocks = 2048 Threads = 1 Full SM
 
 size_t blocksPerGrid = MCS;
 
 // to increase N, use h_xjPerThread
-size_t N = h_xjPerThread * (threadsPerBlock) + 2;
+size_t N = h_xjPerThread * threadsPerBlock;
 
 //__device__ size_t d_N = (1 << 3) * (1 << 9) + 2;
 __device__ size_t d_N = 52;
@@ -88,11 +88,12 @@ __device__ double calc_tot_S(double *sites) {
 	return temp;
 }
 
-__device__ double calc_dS(double *xptr, double *new_xptr) {
-	return calc_S_of_xj(*new_xptr, xptr) - calc_S_of_xj(*xptr, xptr);
+__device__ double calc_dS(double *xptr, double *newx_ptr) {
+	return calc_S_of_xj(*newx_ptr, xptr) - calc_S_of_xj(*xptr, xptr);
 }
 
-__device__ void step(double *xptr, curandState *local_state) {
+__device__ void step(double *sites, int site, curandState *local_state) {
+
 	double delta = 2 * sqrt(d_a);
 	double new_x = rand_x(local_state, *xptr - delta, *xptr + delta);
 	double dS = calc_dS(xptr, &new_x);
@@ -107,10 +108,10 @@ __global__ void Simulate(double *sites, int iterations, curandState *state) {
 	int idx = blockDim.x * blockIdx.x + threadIdx.x;
 	for (int _ = 0; _ < iterations; _++) {
 		for (int i = 0; i < d_xjPerThread; i++) {
+			int site = idx * d_xjPerThread + i;
 			for (int __ = 0; __ < d_n; __++) {
-				int site = idx * d_xjPerThread + i + 1 + blockIdx.x * 2;
-				step(sites + site, state + idx);
-				printf("site %d, idx %d, paralel %d\n", site, idx, i);
+				step(sites, site, state + idx);
+				//printf("site %d, idx %d, paralel %d\n", site, idx, i);
 			}
 		}
 		__syncthreads();
@@ -140,17 +141,18 @@ void messure(FILE *file, double *values) {
 __global__ void initial_ensamble(double *sites, curandState *state){
 	int idx = blockDim.x * blockIdx.x + threadIdx.x;
 	for (int i = 0; i < d_xjPerThread; i++) {
-		sites[idx * d_xjPerThread + i + 1 + blockIdx.x * 2] = rand_x(state + idx, -1, 1);
+		sites[idx * d_xjPerThread + i] = rand_x(state + idx, -1, 1);
 	}
-	if (idx == blockDim.x * blockIdx.x){
-		int site = blockDim.x * blockIdx.x + blockIdx.x * 2;
-		printf("start site %d: %lf, \n", site, sites[site]);
-	}
-	if (idx == blockDim.x * (blockIdx.x + 1) - 1){
-		int site = blockDim.x * (blockIdx.x + 1) + 1 + blockIdx.x * 2;
-		printf("end site %d: %lf, \n", site, sites[site]);
-	}
+	//if (idx == blockDim.x * blockIdx.x){
+		//int site = blockDim.x * blockIdx.x + blockIdx.x * 2;
+		//printf("start site %d: %lf, \n", site, sites[site]);
+	//}
+	//if (idx == blockDim.x * (blockIdx.x + 1) - 1){
+		//int site = blockDim.x * (blockIdx.x + 1) + 1 + blockIdx.x * 2;
+		//printf("end site %d: %lf, \n", site, sites[site]);
+	//}
 }
+
 
 int main() {
 	printf("Degrees of freedom N: %ld \n", N);
@@ -191,11 +193,11 @@ int main() {
 	clock_t start = clock();
 	for (int k = 0; k < runs; k++) {
 		// initialise host sites and rand
-		for (int i = 0; i < blocksPerGrid; i++){
-			h_sites[i*N] = (double)(rand())/(double)(RAND_MAX)-0.5;
-			h_sites[(i+1)*N-1] = h_sites[i*N];
-			printf("idx: %d, %d\n", i*N, (i+1)*N-1);
-		}
+		//for (int i = 0; i < blocksPerGrid; i++){
+			//h_sites[i*N] = (double)(rand())/(double)(RAND_MAX)-0.5;
+			//h_sites[(i+1)*N-1] = h_sites[i*N];
+			//printf("idx: %d, %d\n", i*N, (i+1)*N-1);
+		//}
 		gpuErrchk(cudaMemcpy(d_sites, h_sites, size, cudaMemcpyHostToDevice));
 		initial_ensamble<<<blocksPerGrid, threadsPerBlock>>>(d_sites, d_state);
 
