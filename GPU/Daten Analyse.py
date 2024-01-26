@@ -55,10 +55,10 @@ def c():
     m = 0.5
     Lambda = 0
     a = 0.5
-    deltatao = 1
+    deltatao = 0.5 
     result = {"zero_tao": [], "zero_tao_err": [], "E0": [], "E1": [], "E1-E0": []}
     err = {"zero_tao": []}
-    tao = np.arange(0, 4)
+    tao_div_a = np.arange(0, 5)
 
     fig, ax = plt.subplots()
     for i in range(Iterations):
@@ -67,22 +67,23 @@ def c():
         zero_tao_bin = []
         zero_tao_bin_err = []
         # zero_tao.shape = (bins, tao)
-        for i in tao:
-            zero_tao_bin.append((data * np.roll(data, i, axis=1)).mean(axis=(0,1)))
+        for i in tao_div_a:
+            zero_tao_bin.append((data * np.roll(data, -i, axis=1)).mean(axis=(0,1)))
         result["zero_tao"].append(zero_tao_bin)
         zero_tao_bin = np.array(zero_tao_bin)
         #result["E0"].append(m**2*zero_tao_bin+Lambda*zero_tao_bin)
         #result["E1-E0"].append(-np.log(np.roll(zero_tao_bin, -deltatao)/zero_tao_bin)/deltatao)
 
     for key in result:
-        result[key].append(np.array(result[key]).mean(axis=0))
-        print(f"{key}: {result[key][-1]}")
+        if result[key] != []:
+            result[key].append(np.array(result[key]).mean(axis=0))
+            print(f"{key}: {result[key][-1]}")
 
     #print("test2", np.array(result["zero_tao"]))
     #f = np.log(result["zero_tao"])
     f = np.array(result["zero_tao"])
     #print("test ", f[:,-1])
-    for i in tao:
+    for i in tao_div_a:
         err["zero_tao"].append((((f[-1, i]-f)[:-1, i])**2).mean()**(1/2)/np.abs(f[-1, i]))
     
 
@@ -90,16 +91,17 @@ def c():
     for key in err:
         print(f"{key}: {err[key]}")
 
-    X = tao
-    Xerr = np.zeros_like(tao)
+    X = tao_div_a*a
+    Xerr = np.zeros_like(X)
     #Y = np.array(result["zero_tao"][-1])
-    Y = np.log10(result["zero_tao"][-1])
+    Y = np.log(result["zero_tao"][-1])
     #Yerr = np.abs(1e-2/np.array(result["zero_tao"][-1]))
     #Yerr = np.array(err["zero_tao"])
-    Yerr = np.abs(np.array(err["zero_tao"])/np.array(result["zero_tao"])[-1]/np.log(10))
+    Yerr = np.abs(np.array(err["zero_tao"])/np.array(result["zero_tao"])[-1]/np.log(np.e))
     #Yerr = np.abs(np.log(err["zero_tao"]))
     ax, model = plotData(ax, X, Xerr, Y, Yerr, polyfit=1, fmt="x", label="Daten")
     model.printParameter()
+    print("xq", model.m)
     #ax = setSpace(ax, X, Y)
     
     #ax.set_yscale("log")
