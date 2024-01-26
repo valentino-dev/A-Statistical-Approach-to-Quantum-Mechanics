@@ -133,6 +133,12 @@ def plotLine(axis, x, y, label=None, linewidth=0.7, linestyle="solid", color="r"
 
     return axis
 
+def plotApproximation(ax, x, y, lowest_y, highest_y, label=None, linewidth=0.7, color="r"):
+    ax = plotLine(ax, x, y, label=label, linewidth=linewidth, linestyle="solid", color=color)
+    ax = plotLine(ax, x, lowest_y, label=label, linewidth=linewidth, linestyle="dashdot", color=color)
+    return plotLine(ax, x, highest_y, label=label, linewidth=linewidth, linestyle="dashdot", color=color)
+ 
+
 
 def plotData(axis, X, Xerr, Y, Yerr, label=None, capsize=1, elinewidth=0.5, fmt=",", polyfit=1, color="r", xscaleing=1, yscaleing=1, errorbar=True):
     X = X*xscaleing

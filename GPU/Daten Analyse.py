@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import scipy.odr
 
 from olib import *
 # a=fig4, b=fig5, ..
@@ -45,6 +46,9 @@ def b():
     fig.set_size_inches(11.69, 8.27)
     fig.savefig("fig5.pdf", dpi=500)
 
+def func(beta, x):
+    return beta[0]+beta[1]*np.exp(beta[2]*x)
+
 def c():
     #FILE_PATH = "~/Git/A-Statistical-Approach-to-Quantum-Mechanics/CPU/Simulation/Simulation/data_fig6.csv"
     FILE_PATH = "~/Git/A-Statistical-Approach-to-Quantum-Mechanics/GPU/data/data_fig6.csv"
@@ -58,7 +62,7 @@ def c():
     deltatao = 0.5 
     result = {"zero_tao": [], "zero_tao_err": [], "E0": [], "E1": [], "E1-E0": []}
     err = {"zero_tao": []}
-    tao_div_a = np.arange(0, 5)
+    tao_div_a = np.arange(0, 8)
 
     fig, ax = plt.subplots()
     for i in range(Iterations):
@@ -91,20 +95,46 @@ def c():
     for key in err:
         print(f"{key}: {err[key]}")
 
-    X = tao_div_a*a
-    Xerr = np.zeros_like(X)
-    #Y = np.array(result["zero_tao"][-1])
-    Y = np.log(result["zero_tao"][-1])
-    #Yerr = np.abs(1e-2/np.array(result["zero_tao"][-1]))
-    #Yerr = np.array(err["zero_tao"])
-    Yerr = np.abs(np.array(err["zero_tao"])/np.array(result["zero_tao"])[-1]/np.log(np.e))
-    #Yerr = np.abs(np.log(err["zero_tao"]))
-    ax, model = plotData(ax, X, Xerr, Y, Yerr, polyfit=1, fmt="x", label="Daten")
-    model.printParameter()
-    print("xq", model.m)
-    #ax = setSpace(ax, X, Y)
-    
-    #ax.set_yscale("log")
+    way = 1
+
+    if way == 0:
+        X = tao_div_a*a
+        Xerr = np.zeros_like(X)
+        Y = np.log(result["zero_tao"][-1])
+        Yerr = np.abs(np.array(err["zero_tao"])/np.array(result["zero_tao"])[-1]/np.log(np.e))
+        ax, model = plotData(ax, X, Xerr, Y, Yerr, polyfit=1, fmt="x", label="Daten")
+        model.printParameter()
+        print("xq", model.m)
+        #ax = setSpace(ax, X, Y)
+        #ax.set_yscale("log")
+    if way == 1:
+        X = tao_div_a*a
+        Xerr = np.zeros_like(X)
+        Y = result["zero_tao"][-1]
+        Yerr = err["zero_tao"]
+
+        model = scipy.odr.Model(func)
+        odrFit = scipy.odr.ODR(scipy.odr.RealData(X, Y, Xerr, Yerr), model, [1, 1, -1])
+        odrFit.set_job(fit_type=2)
+        output = odrFit.run()
+
+        xRange = X.max() - X.min()
+        x = np.linspace(X.min() - xRange*0.1, X.max() + xRange*0.1, 100)
+        y = func(output.beta, x)
+        ax = plotLine(ax, x, y)
+        #ax = plotApproximation(ax, x, y, func(output.beta + output.sd_beta, x), func(output.beta - output.sd_beta, x))
+        ax, _ = plotData(ax, X, Xerr, Y, Yerr, polyfit=0, fmt="x", label="Daten")
+
+        print(f"E0-E1: {output.beta}")
+
+
+
+
+
+
+        
+
+
     print("plotting")
     plt.show()
 
