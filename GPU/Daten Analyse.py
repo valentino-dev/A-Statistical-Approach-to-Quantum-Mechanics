@@ -51,7 +51,9 @@ def func(beta, x):
 
 def c():
     #FILE_PATH = "~/Git/A-Statistical-Approach-to-Quantum-Mechanics/CPU/Simulation/Simulation/data_fig6.csv"
-    FILE_PATH = "~/Git/A-Statistical-Approach-to-Quantum-Mechanics/GPU/data/data_fig6.csv"
+    PATH = "~/Git"
+    PATH = "~/Git/A-Statistical-Approach-to-Quantum-Mechanics/GPU/"
+    FILE_PATH = PATH + "data/data_fig6.csv"
     totalConfigurations = 2720
     configurations_to_use = 2000
     MCPerCALC = 10
@@ -133,10 +135,11 @@ def c():
 
 
         
-
+    ax.set_title(output.beta)
 
     print("plotting")
-    plt.show()
+    fig.savefig("fig6.pdf", dpi=500)
+    #plt.show()
 
 
 def d():
