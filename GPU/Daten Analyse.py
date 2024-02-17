@@ -6,7 +6,7 @@ plt.rcParams.update({"text.usetex": True, "font.family": "serif"})
 
 from olib import *
 # a=fig4, b=fig5, ..
-exec = "g"
+exec = "c"
 
 
 # fig, ax = plt.subplots(4, 4)
@@ -54,93 +54,60 @@ def func(beta, x):
     return beta[0]*np.exp(beta[1]*x)
 
 def c():
-    #FILE_PATH = "~/Git/A-Statistical-Approach-to-Quantum-Mechanics/CPU/Simulation/Simulation/data_fig6.csv"
-    PATH = "~/Git"
     PATH = "~/Git/A-Statistical-Approach-to-Quantum-Mechanics/GPU/"
-    FILE_PATH = PATH + "data/data_fig10_4.csv"
-    totalConfigurations = 2000
-    configurations_to_use = 1000
-    MCPerCALC = 10
+    FILE_PATH = PATH + "data/data_fig6.csv"
+    total_number_of_f_sq = 1
+    totalConfigurations = 2720
+    configurations_to_use = 2000
+    MCPerCALC = 100
+    a = 0.5
     Iterations = int(configurations_to_use/MCPerCALC)
-    m = 0.5
-    Lambda = 0
-    a = 0.1
-    result = {"zero_tao": [], "zero_tao_err": [], "E0": [], "E1": [], "E1-E0": []}
-    err = {"zero_tao": []}
-    tao_div_a = np.arange(0, 8)
+    ts = np.arange(6) # tau divided by a
+    zero_tau = np.zeros((total_number_of_f_sq, Iterations, MCPerCALC, ts.shape[0]))
+    zero_tau_err = np.zeros_like(zero_tau)
+    zero_tau_mean = np.zeros((total_number_of_f_sq, ts.shape[0]))
+    zero_tau_mean_err = np.zeros_like(zero_tau_mean)
+    delta_E = np.zeros((total_number_of_f_sq))
 
     fig, ax = plt.subplots()
-    for i in range(Iterations):
-        data = pd.read_csv(FILE_PATH, sep=";", skiprows=np.delete(np.arange(totalConfigurations), np.arange(i*MCPerCALC, (i+1)*MCPerCALC, 1))).to_numpy()
+    for n_f_sq in range(total_number_of_f_sq):
+        for i in range(Iterations):
+            print(f"({0.01*int(10000*(n_f_sq*Iterations + i)/total_number_of_f_sq/Iterations)}%)")
+            data = pd.read_csv(FILE_PATH, sep=";", header=None, skiprows=np.delete(np.arange(totalConfigurations), np.arange(i*MCPerCALC, (i+1)*MCPerCALC, 1))).to_numpy()
 
-        zero_tao_bin = []
-        zero_tao_bin_err = []
-        for i in tao_div_a:
-            zero_tao_bin.append((data * np.roll(data, -i, axis=1)).mean(axis=(0,1)))
-        result["zero_tao"].append(zero_tao_bin)
-        zero_tao_bin = np.array(zero_tao_bin)
+            for t in ts:
+                tempzt = data * np.roll(data, -t, axis=1) 
+                tempztmean = tempzt.mean(axis=1)
+                tempzterr = ((tempzt - np.expand_dims(tempztmean, axis=0).T)**2).mean(axis=1)**(1/2)/np.abs(tempztmean)
+                zero_tau[n_f_sq, i, :, t] = tempztmean[:]
+                zero_tau_err[n_f_sq, i, :, t] = tempzterr[:]
 
-    for key in result:
-        if result[key] != []:
-            result[key].append(np.array(result[key]).mean(axis=0))
-            print(f"{key}: {result[key][-1]}")
+    zero_tau_mean = zero_tau.mean(axis=2).mean(axis=1)
+    zero_tau_mean_err[:, :] = np.linalg.norm(np.linalg.norm(zero_tau_err, axis=2)/zero_tau_err.shape[2], axis=1)/zero_tau_err.shape[1]
+    X = ts*a
+    Xerr = np.zeros_like(X)
+    Y = zero_tau_mean
+    Yerr = zero_tau_mean_err
 
-    #print("test2", np.array(result["zero_tao"]))
-    #f = np.log(result["zero_tao"])
-    f = np.array(result["zero_tao"])
-    #print("test ", f[:,-1])
-    for i in tao_div_a:
-        err["zero_tao"].append((((f[-1, i]-f)[:-1, i])**2).mean()**(1/2)/np.abs(f[-1, i]))
-    
-
-    print("Uncertainties:")
-    for key in err:
-        print(f"{key}: {err[key]}")
-
-    way = 1
-
-    if way == 0:
-        X = tao_div_a*a
-        Xerr = np.zeros_like(X)
-        Y = np.log(result["zero_tao"][-1])
-        Yerr = np.abs(np.array(err["zero_tao"])/np.array(result["zero_tao"])[-1]/np.log(np.e))
-        ax, model = plotData(ax, X, Xerr, Y, Yerr, polyfit=1, fmt="x", label="Daten")
-        model.printParameter()
-        print("xq", model.m)
-        #ax = setSpace(ax, X, Y)
-        #ax.set_yscale("log")
-    if way == 1:
-        X = tao_div_a*a
-        Xerr = np.zeros_like(X)
-        Y = result["zero_tao"][-1]
-        Yerr = err["zero_tao"]
-
+    for n_f_sq in range(total_number_of_f_sq):
+        ax, model = plotData(ax, X, Xerr, Y[n_f_sq], Yerr[n_f_sq], polyfit=0, fmt="x")
+        # ax.scatter(X, Y[n_f_sq], marker="x", linewidths=0.7)
+        ax.set_yscale("log")
         model = scipy.odr.Model(func)
-        #odrFit = scipy.odr.ODR(scipy.odr.RealData(X, Y, Xerr, Yerr), model, [1, 1, -1])
-        odrFit = scipy.odr.ODR(scipy.odr.RealData(X, Y, Xerr, Yerr), model, [1, -1])
-        odrFit.set_job(fit_type=2)
+        odrFit = scipy.odr.ODR(scipy.odr.RealData(X, Y[n_f_sq], Xerr, Yerr[n_f_sq]), model, [-1, 1, 0])
+        odrFit.set_job(fit_type = 2)
         output = odrFit.run()
-
-        xRange = X.max() - X.min()
-        x = np.linspace(X.min() - xRange*0.1, X.max() + xRange*0.1, 100)
+        delta_E[n_f_sq] = -output.beta[0]
+        x = X
         y = func(output.beta, x)
-        ax = plotLine(ax, x, y)
-        #ax = plotApproximation(ax, x, y, func(output.beta + output.sd_beta, x), func(output.beta - output.sd_beta, x))
-        ax, _ = plotData(ax, X, Xerr, Y, Yerr, polyfit=0, fmt="x", label="Daten")
-
-        print(f"E0-E1: {output.beta}")
-
-
-
-
-
-
+        ax.plot(x, y, linewidth = 0.7)
         
-    ax.set_title(output.beta)
+    print(delta_E)
 
+
+    ax.set_title(r"Fig. 6: $\Delta E="+f"{delta_E[0]}"+r"$")
     print("plotting")
-    fig.savefig("fig6_test.pdf", dpi=500)
-    #plt.show()
+    fig.savefig("fig6.pdf", dpi=500)
 
 
 def d():
@@ -281,7 +248,6 @@ def g():
 
     zero_tau_mean = zero_tau.mean(axis=2).mean(axis=1)
     zero_tau_mean_err[:, :] = np.linalg.norm(np.linalg.norm(zero_tau_err, axis=2)/zero_tau_err.shape[2], axis=1)/zero_tau_err.shape[1]
-
     X = ts*a
     Xerr = np.zeros_like(X)
     Y = zero_tau_mean
@@ -317,6 +283,38 @@ def g():
     fig.tight_layout()
     fig.savefig("fig10.pdf", dpi=500)
 
+
+def printAction():
+    PATH = "~/Git/A-Statistical-Approach-to-Quantum-Mechanics/GPU/"
+    FILE_PATH = PATH + "data/data_fig6.csv"
+    totalConfigurations = 500
+    configurations_to_use = 500
+    MCPerCALC = 10
+    a = 0.5
+    m0 = 0.5
+    Lambda = 0.0
+    mu = 2.0
+    f = 2.0
+
+
+    Iterations = int(configurations_to_use/MCPerCALC)
+    action = np.zeros((configurations_to_use))
+
+    for i in range(Iterations):
+        data = pd.read_csv(FILE_PATH, sep=";", header=None, skiprows=np.delete(np.arange(totalConfigurations), np.arange(i*MCPerCALC, (i+1)*MCPerCALC, 1))).to_numpy()
+        for k in range(data.shape[0]):
+            action[i*data.shape[0]+k] = (m0 /a/ 2 * (data[k] - np.roll(data[k], 1))**2 + a*mu/2*data[k]**2+Lambda*data[k]**4).sum()
+    
+    X = np.arange(configurations_to_use)
+    Y = action
+
+    fig, ax = plt.subplots()
+    ax.plot(X, Y)
+
+    fig.savefig("action.pdf", dpi=500)
+
+
+# printAction()
 
 
 for char in exec:

@@ -40,7 +40,7 @@ __device__ double potential_2(double *x, double *settings) {
 
 __device__ double calc_S_of_xj(double x, double *ptr, double *previous_site, double *following_site, double *settings) {
 	return settings[9] * 0.5 * (pow(*following_site - x, 2) + pow(x - *previous_site, 2)) / settings[8] +
-		settings[8] * (potential_2(&x, settings) + potential_2(ptr - 1, settings));
+		settings[8] * (potential_1(&x, settings) + potential_1(ptr - 1, settings));
 }
 
 __device__ double calc_dS(double *xptr, double *previous_site, double *following_site, double *newx_ptr, double *settings) {
@@ -54,6 +54,17 @@ __device__ void step(double *sites, int site, int previous_site, int following_s
 	double dS = calc_dS(xptr, sites+previous_site, sites+following_site, &new_x, settings);
 	if (dS < 0 || pow(M_E, -dS) > rand_x(local_state, 0, 1))
 		*xptr = new_x;
+}
+
+__device__ void Print_Action(double *sites, double *settings){
+	size_t N = (int) settings[5] * (int) settings[6];
+	double S = 0;
+	for (int i = 0; i < N; i++){	
+		S += settings[9] * 0.5 * (pow(sites[(i+1)%N] - sites[i], 2)) / settings[8] + settings[8] * potential_1(&sites[i], settings);
+	}
+
+	printf("S: %lf\n", S);
+	
 }
 
 // cuda c kernel
@@ -71,6 +82,10 @@ __global__ void Simulate(double *sites, int iterations, curandState *state, doub
 			}
 		}
 		__syncthreads();
+		//if(idx == 0){
+			//Print_Action(sites, settings);
+				
+		//}
 	}
 }
 
@@ -92,7 +107,7 @@ void messure(FILE *file, double *values, double *settings) {
 __global__ void initial_ensamble(double *sites, curandState *state, double *settings){
 	int idx = blockDim.x * blockIdx.x + threadIdx.x;
 	for (int i = 0; i < (int) settings[4]; i++) {
-		sites[idx * (int) settings[4] + i] = rand_x(state + idx, -1, 1);
+		sites[idx * (int) settings[4] + i] = rand_x(state + idx, -100, 100);
 	}
 }
 
@@ -112,22 +127,22 @@ int main(int argc, char** argv) {
 	}
 	gpuErrchk(cudaMemcpy(d_settings, h_settings, (argc-2)*sizeof(double), cudaMemcpyHostToDevice));
 
-	size_t runs = (int) h_settings[0];
-	size_t SII = (int) h_settings[1];
-	size_t RS = (int) h_settings[2];
-	size_t xjPerThread = (int) h_settings[3];
-	size_t threadsPerBlock = (int) h_settings[5];
-	size_t MCS = (int) h_settings[6];
-	size_t MCI = (int) h_settings[7];
-	size_t blocksPerGrid = MCS;
+	size_t runs 			= (int) h_settings[0];
+	size_t SII 			= (int) h_settings[1]; // Statistical independent iterations
+	size_t RS 			= (int) h_settings[2]; // Recodring (messureing) start
+	size_t xjPerThread 		= (int) h_settings[3];
+	size_t threadsPerBlock 		= (int) h_settings[5];
+	size_t MCS 			= (int) h_settings[6]; // Monte Carlo Simulations (shoud fill all SMs)
+	size_t MCI 			= (int) h_settings[7]; // Monte Carlo Iterations
 
+
+	size_t blocksPerGrid 		= MCS;
 	size_t N = xjPerThread * threadsPerBlock;
 	size_t length = MCS * N;
 	size_t size = length * sizeof(double);
 	size_t total_configurations =  MCS * runs * MCI / SII;
 
 	printf("Settings: %i runs, %i SII, %i RS, %i xjPerthread, n=%i, %i threadsPerBlock, %i MCS, %i MCI, a=%lf, m0=%lf, lambda=%lf, mu_sq=%lf, f_sq=%lf\n", runs, SII, RS, xjPerThread, (int) h_settings[4], threadsPerBlock, MCS, MCI, h_settings[8], h_settings[9], h_settings[10], h_settings[11], h_settings[12]);
-
 
 
 
@@ -157,7 +172,6 @@ int main(int argc, char** argv) {
 	gpuErrchk(cudaMalloc((void **)&d_sites, size));
 	gpuErrchk(cudaMemset(h_sites, 0, size));
 	gpuErrchk(cudaMemset(d_sites, 0, size));
-	//h_sites = (double *)malloc(size);
 
 
 	clock_t start = clock();
@@ -184,7 +198,6 @@ int main(int argc, char** argv) {
 
 	// free memory
 	printf("Free memory..\n");
-	//free(h_sites);
 	gpuErrchk(cudaFreeHost(h_sites));
 	gpuErrchk(cudaFree(d_sites));
 
@@ -195,5 +208,4 @@ int main(int argc, char** argv) {
 			"Benchmark: %0.2e sites/s\n",
 			total_configurations, time_spend, benchmark);
 	return 0;
-	;
 }
