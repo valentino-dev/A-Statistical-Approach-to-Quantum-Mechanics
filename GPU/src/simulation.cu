@@ -30,7 +30,6 @@ typedef struct{
 __global__ void init_rand(curandState *state) {
 	int idx = blockDim.x * blockIdx.x + threadIdx.x;
 	curand_init(42, idx, 0, &state[idx]);
-		//printf("test\n");
 }
 
 __device__ double rand_x(curandState *state, double min, double max) {
@@ -64,9 +63,8 @@ __device__ void step(double *sites, int site, int previous_site, int following_s
 
 __device__ void Print_Action(double *sites, setting *settings){
 	double S = 0;
-	for (int i = 0; i < settings->N; i++){	
+	for (int i = 0; i < settings->N; i++)
 		S += settings->m0 * 0.5 * (pow(sites[(i+1)%settings->N] - sites[i], 2)) / settings->a + settings->a * potential_1(&sites[i], settings);
-	}
 
 	printf("S: %lf\n", S);
 	
@@ -86,11 +84,6 @@ __global__ void Simulate(double *sites, int iterations, curandState *state, sett
 			}
 		}
 		__syncthreads();
-		printf("test\n");
-		//if(idx == 0){
-			//Print_Action(sites, settings);
-				
-		//}
 	}
 }
 
@@ -139,50 +132,46 @@ void collectSettings(setting *settings, char **argv){
 
 
 int main(int argc, char** argv) {
+	// Checking arguments for error
 	if (argc != 15){
 		printf("ERROR: Not enough arguments!\nPlease specify the following settings: data_path, runs, SII, RS, xjPerThread, n, threadsPerBlock, MCS, MCI, a, m0, lambda, mu_sq, f_sq.\n");
 		return 0;
 	}
-
 	printf("%d Arguments:", argc);
 	for(size_t i = 0; i < argc; i++){
 		printf(" %i: %s,", i, argv[i]);
 	}
-	printf("\n");
+	printf("\n\n");
 
-	printf("Collecting Settings..\n"); // initialise Settings: data_path, runs, SII, RS, xjPerThread, n, threadsPerBlock, MCS, MCI, a, m0, lambda, mu_sq, f_sq
+
+	// Collecting Settings: data_path, runs, SII, RS, xjPerThread, n, threadsPerBlock, MCS, MCI, a, m0, lambda, mu_sq, f_sq
+	printf("Collecting Settings..\n"); 
 	setting *h_settings, *d_settings;
 	gpuErrchk(cudaMallocHost((void **)&h_settings, sizeof(setting)));
 	gpuErrchk(cudaMalloc((void **)&d_settings, sizeof(setting)));
 	collectSettings(h_settings, argv);
-	printf("size of settings: %d. Value of [0]: %d\n.", sizeof(setting), h_settings->runs);
 	gpuErrchk(cudaMemcpy(d_settings, h_settings, sizeof(setting), cudaMemcpyHostToDevice));
-
-	
-	//printf("Settings: %i runs, %i SII, %i RS, %i xjPerthread, n=%i, %i threadsPerBlock, %i MCS, %i MCI, a=%lf, m0=%lf, lambda=%lf, mu_sq=%lf, f_sq=%lf\n", runs, SII, RS, xjPerThread, (int) h_settings[4], threadsPerBlock, MCS, MCI, h_settings[8], h_settings[9], h_settings[10], h_settings[11], h_settings[12]);
-
-
-
+	printf("Settings: %i runs, %i SII, %i RS, %i xjPerthread, n=%i, %i threadsPerBlock, %i MCS, %i MCI, a=%lf, m0=%lf, lambda=%lf, mu_sq=%lf, f_sq=%lf\n", h_settings->runs, h_settings->SII, h_settings->RS, h_settings->xjPerThread, h_settings->n, h_settings->threadsPerBlock, h_settings->MCS, h_settings->MCI, h_settings->a, h_settings->m0, h_settings->lambda, h_settings->mu_sq, h_settings->f_sq);
 	printf("Degrees of freedom N: %ld \n", h_settings->N);
+	printf("Threads per block: %d; Blocks per grid: %d\n", h_settings->threadsPerBlock, h_settings->blocksPerGrid);
 
-	printf("Launching.\n"); // setup main configs
+
+	// Setup main settings
+	printf("Launching.\n"); 
 	FILE *data_file;
 	data_file = fopen(argv[1], "w");
 	srand(42);
 
 
-	// setup cuRAND state for randomization
+	// Setup cuRAND state for randomization
 	printf("Setting cuRAND..\n");
 	curandState *d_state;
 	gpuErrchk(cudaMalloc((void **)&d_state, h_settings->threadsPerBlock * h_settings->blocksPerGrid * sizeof(curandState)));
 	init_rand<<<h_settings->blocksPerGrid, h_settings->threadsPerBlock>>>(d_state);
 	gpuErrchk(cudaDeviceSynchronize());
 
-	// setup kernel configs
-	printf("Threads per block: %d; Blocks per grid: %d\n", h_settings->threadsPerBlock,
-			h_settings->blocksPerGrid);
 
-	// initialise device sites
+	// Initialise device sites
 	double *h_sites, *d_sites;
 	gpuErrchk(cudaMallocHost((void **)&h_sites, h_settings->array_size));
 	gpuErrchk(cudaMalloc((void **)&d_sites, h_settings->array_size));
@@ -190,14 +179,18 @@ int main(int argc, char** argv) {
 	gpuErrchk(cudaMemset(d_sites, 0, h_settings->array_size));
 
 
+	// Starting runs
 	clock_t start = clock();
 	for (int k = 0; k < h_settings->runs; k++) {
 		gpuErrchk(cudaMemcpy(d_sites, h_sites, h_settings->array_size, cudaMemcpyHostToDevice));
 		initial_ensamble<<<h_settings->blocksPerGrid, h_settings->threadsPerBlock>>>(d_sites, d_state, d_settings);
 
-		// wait until the Simulation comes to equilibrium and take first messurement
+
+		// Wait until the Simulation comes to equilibrium
 		Simulate<<<h_settings->blocksPerGrid, h_settings->threadsPerBlock>>>(d_sites, h_settings->RS, d_state, d_settings);
 
+
+		// Simulating and messuring
 		size_t iterations = h_settings->MCI / h_settings->SII;
 		for (size_t i = 0; i < iterations; i++) {
 			gpuErrchk(cudaDeviceSynchronize());
@@ -212,11 +205,14 @@ int main(int argc, char** argv) {
 	fclose(data_file);
 	gpuErrchk(cudaDeviceSynchronize());
 
-	// free memory
+
+	// Free memory
 	printf("Free memory..\n");
 	gpuErrchk(cudaFreeHost(h_sites));
 	gpuErrchk(cudaFree(d_sites));
 
+
+	// End Results
 	printf("Done.\n");
 	double time_spend = (double)(end - start) / CLOCKS_PER_SEC;
 	double benchmark = h_settings->MCI * h_settings->MCS * h_settings->N * h_settings->runs / time_spend;
