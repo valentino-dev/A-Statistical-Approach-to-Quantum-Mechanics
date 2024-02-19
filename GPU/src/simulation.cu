@@ -12,11 +12,9 @@
 
 #define gpuErrchk(ans)                                                         \
 { gpuAssert((ans), __FILE__, __LINE__); }
-inline void gpuAssert(cudaError_t code, const char *file, int line,
-		bool abort = true) {
+inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort = true) {
 	if (code != cudaSuccess) {
-		fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(code), file,
-				line);
+		fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
 		if (abort)
 			exit(code);
 	}
@@ -32,8 +30,9 @@ __global__ void init_rand(curandState *state) {
 	curand_init(42, idx, 0, &state[idx]);
 }
 
-__device__ double rand_x(curandState *state, double min, double max) {
-	return curand_uniform(state) * (max - min) + min;
+__device__ double rand_x(curandState *local_state, double min, double max) {
+	// return 0.5;
+	return curand_uniform(local_state) * (max - min) + min;
 }
 
 __device__ double potential_1(double *x, setting *settings) {
@@ -50,14 +49,15 @@ __device__ double calc_S_of_xj(double x, double *ptr, double *previous_site, dou
 }
 
 __device__ double calc_dS(double *xptr, double *previous_site, double *following_site, double *newx_ptr, setting *settings) {
-	return calc_S_of_xj(*newx_ptr, xptr, previous_site, following_site, settings) - calc_S_of_xj(*xptr, xptr, previous_site, following_site, settings);
+	return calc_S_of_xj(*newx_ptr, xptr, previous_site, following_site, settings) - 
+		calc_S_of_xj(*xptr, xptr, previous_site, following_site, settings);
 }
 
-__device__ void step(double *sites, int site, int previous_site, int following_site, curandState *local_state, setting *settings) {
+__device__ void step(double *sites, int site, int previous_site, int following_site, curandState local_state, setting *settings) {
 	double *xptr = sites+site;
-	double new_x = rand_x(local_state, *xptr - settings->delta, *xptr + settings->delta);
+	double new_x = rand_x(&local_state, *xptr - settings->delta, *xptr + settings->delta);
 	double dS = calc_dS(xptr, sites+previous_site, sites+following_site, &new_x, settings);
-	if (dS < 0 || pow(M_E, -dS) > rand_x(local_state, 0, 1))
+	if (dS < 0 || pow(M_E, -dS) > curand_uniform(&local_state))
 		*xptr = new_x;
 }
 
@@ -80,7 +80,7 @@ __global__ void Simulate(double *sites, int iterations, curandState *state, sett
 			int previous_site = (threadIdx.x * settings->xjPerThread + i - 1) % (blockDim.x * settings->xjPerThread) + blockDim.x * settings->xjPerThread * blockIdx.x;
 			int following_site = (threadIdx.x * settings->xjPerThread + i + 1) % (blockDim.x * settings->xjPerThread) + blockDim.x * settings->xjPerThread * blockIdx.x;
 			for (int __ = 0; __ < settings->n; __++) {
-				step(sites, site, previous_site, following_site, state + idx, settings);
+				step(sites, site, previous_site, following_site, state[idx], settings);
 			}
 		}
 		__syncthreads();
@@ -197,8 +197,7 @@ int main(int argc, char** argv) {
 			gpuErrchk(cudaMemcpy(h_sites, d_sites, h_settings->array_size, cudaMemcpyDeviceToHost));
 			Simulate<<<h_settings->blocksPerGrid, h_settings->threadsPerBlock>>>(d_sites, iterations, d_state, d_settings);
 			messure(data_file, h_sites, h_settings);
-			printf("(%3.2lf %%)\n",
-					(i + 1 + k * iterations) * 100.0 / iterations / h_settings->runs);
+			printf("(%3.2lf %%)\n", (i + 1 + k * iterations) * 100.0 / iterations / h_settings->runs);
 		}
 	}
 	clock_t end = clock();
