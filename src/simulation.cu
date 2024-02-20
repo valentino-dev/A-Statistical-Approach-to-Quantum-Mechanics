@@ -21,12 +21,13 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort =
 }
 
 typedef struct{
-	int runs, SII, RS, xjPerThread, n, threadsPerBlock, MCS, MCI, a, m0, lambda, mu_sq, f_sq, delta, N, total_configurations, blocksPerGrid, array_size;
+	int runs, SII, RS, xjPerThread, n, threadsPerBlock, MCS, MCI, N, total_configurations, blocksPerGrid, array_size;
+	double a, m0, lambda, mu_sq, f_sq, delta;
 } setting;
 
 
 __global__ void init_rand(curandState *state) {
-	int idx = blockDim.x * blockIdx.x + threadIdx.x;
+	unsigned int idx = blockDim.x * blockIdx.x + threadIdx.x;
 	curand_init(42, idx, 0, &state[idx]);
 }
 
@@ -63,7 +64,7 @@ __device__ void step(double *sites, int site, int previous_site, int following_s
 
 __device__ void Print_Action(double *sites, setting *settings){
 	double S = 0;
-	for (int i = 0; i < settings->N; i++)
+	for (size_t i = 0; i < settings->N; i++)
 		S += settings->m0 * 0.5 * (pow(sites[(i+1)%settings->N] - sites[i], 2)) / settings->a + settings->a * potential_1(&sites[i], settings);
 
 	printf("S: %lf\n", S);
@@ -72,14 +73,15 @@ __device__ void Print_Action(double *sites, setting *settings){
 
 // cuda c kernel
 __global__ void Simulate(double *sites, int iterations, curandState *state, setting *settings) {
-	int idx = blockDim.x * blockIdx.x + threadIdx.x;
+	unsigned int idx = blockDim.x * blockIdx.x + threadIdx.x;
 
-	for (int _ = 0; _ < iterations; _++) {
-		for (int i = 0; i < settings->xjPerThread; i++) {
-			int site = idx * settings->xjPerThread + i;
-			int previous_site = (threadIdx.x * settings->xjPerThread + i - 1) % (blockDim.x * settings->xjPerThread) + blockDim.x * settings->xjPerThread * blockIdx.x;
-			int following_site = (threadIdx.x * settings->xjPerThread + i + 1) % (blockDim.x * settings->xjPerThread) + blockDim.x * settings->xjPerThread * blockIdx.x;
-			for (int __ = 0; __ < settings->n; __++) {
+	unsigned int xjBlock = idx * settings->xjPerThread;
+	for (size_t = 0; _ < iterations; _++) {
+		for (size_t i = 0; i < settings->xjPerThread; i++) {
+			unsigned int site = xjBlock + i;
+			unsigned int previous_site = (threadIdx.x * settings->xjPerThread + i - 1) % (blockDim.x * settings->xjPerThread) + blockDim.x * settings->xjPerThread * blockIdx.x;
+			unsigned int following_site = (threadIdx.x * settings->xjPerThread + i + 1) % (blockDim.x * settings->xjPerThread) + blockDim.x * settings->xjPerThread * blockIdx.x;
+			for (size_t __ = 0; __ < settings->n; __++) {
 				step(sites, site, previous_site, following_site, state[idx], settings);
 			}
 		}
@@ -88,7 +90,7 @@ __global__ void Simulate(double *sites, int iterations, curandState *state, sett
 }
 
 __global__ void print_sites(double *sites) {
-	int idx = blockDim.x * blockIdx.x + threadIdx.x;
+	unsigned int idx = blockDim.x * blockIdx.x + threadIdx.x;
 	printf("D: site %i, value %lf\n", idx, sites[idx]);
 }
 
@@ -102,9 +104,9 @@ void messure(FILE *file, double *values, setting *settings) {
 }
 
 __global__ void initial_ensamble(double *sites, curandState *state, setting *settings){
-	int idx = blockDim.x * blockIdx.x + threadIdx.x;
-	for (int i = 0; i < (int) settings->n; i++) {
-		sites[idx * (int) settings->n + i] = rand_x(state + idx, -100, 100);
+	unsigned int idx = blockDim.x * blockIdx.x + threadIdx.x;
+	for (size_t i = 0; i < settings->n; i++) {
+		sites[idx * settings->n + i] = rand_x(state + idx, -100, 100);
 	}
 }
 
@@ -127,6 +129,7 @@ void collectSettings(setting *settings, char **argv){
 	settings->N = settings->xjPerThread * settings->threadsPerBlock;
 	settings->array_size = settings->MCS * settings->N * sizeof(double);
 	settings->blocksPerGrid = settings->MCS;
+	settings->delta = 2 * sqrt(a)
 
 }
 
@@ -181,7 +184,7 @@ int main(int argc, char** argv) {
 
 	// Starting runs
 	clock_t start = clock();
-	for (int k = 0; k < h_settings->runs; k++) {
+	for (size_t k = 0; k < h_settings->runs; k++) {
 		gpuErrchk(cudaMemcpy(d_sites, h_sites, h_settings->array_size, cudaMemcpyHostToDevice));
 		initial_ensamble<<<h_settings->blocksPerGrid, h_settings->threadsPerBlock>>>(d_sites, d_state, d_settings);
 
