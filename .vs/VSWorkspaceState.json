@@ -1,9 +1,10 @@
 {
   "ExpandedNodes": [
     "",
-    "\\Simulation",
-    "\\Simulation\\src"
+    "\\CPU",
+    "\\CPU\\Simulation",
+    "\\CPU\\Simulation\\Simulation"
   ],
-  "SelectedNode": "\\Simulation\\src",
+  "SelectedNode": "\\CPU\\Simulation\\Simulation.sln",
   "PreviewInSolutionExplorer": false
 }
