@@ -49,17 +49,23 @@ __device__ double calc_S_of_xj(double x, double *ptr, double *previous_site, dou
 		settings->a * (potential_1(&x, settings) + potential_1(ptr - 1, settings));
 }
 
-__device__ double calc_dS(double *xptr, double *previous_site, double *following_site, double *newx_ptr, setting *settings) {
-	return calc_S_of_xj(*newx_ptr, xptr, previous_site, following_site, settings) - 
+__device__ double calc_dS(double *xptr, double *previous_site, double *following_site, double *new_xptr, setting *settings) {
+	return calc_S_of_xj(*new_xptr, xptr, previous_site, following_site, settings) - 
 		calc_S_of_xj(*xptr, xptr, previous_site, following_site, settings);
 }
 
 __device__ void step(double *sites, int site, int previous_site, int following_site, curandState local_state, setting *settings) {
 	double *xptr = sites+site;
 	double new_x = rand_x(&local_state, *xptr - settings->delta, *xptr + settings->delta);
+	
+	//printf("a new_xptr: %lf, xptr: %lf, delta: %lf\n", new_x, *xptr, settings->delta);
+	//printf("new_x: %lf, old_x: %lf\n", new_x, *xptr);
 	double dS = calc_dS(xptr, sites+previous_site, sites+following_site, &new_x, settings);
-	if (dS < 0 || pow(M_E, -dS) > curand_uniform(&local_state))
+	//printf("S: %lf\n", dS);
+	if (dS < 0 || pow(M_E, -dS) > curand_uniform(&local_state)){
 		*xptr = new_x;
+		//printf("accept S\n");
+	}
 }
 
 __device__ void Print_Action(double *sites, setting *settings){
@@ -75,13 +81,12 @@ __device__ void Print_Action(double *sites, setting *settings){
 __global__ void Simulate(double *sites, int iterations, curandState *state, setting *settings) {
 	unsigned int idx = blockDim.x * blockIdx.x + threadIdx.x;
 
-	unsigned int xjBlock = idx * settings->xjPerThread;
-	for (size_t = 0; _ < iterations; _++) {
-		for (size_t i = 0; i < settings->xjPerThread; i++) {
-			unsigned int site = xjBlock + i;
-			unsigned int previous_site = (threadIdx.x * settings->xjPerThread + i - 1) % (blockDim.x * settings->xjPerThread) + blockDim.x * settings->xjPerThread * blockIdx.x;
-			unsigned int following_site = (threadIdx.x * settings->xjPerThread + i + 1) % (blockDim.x * settings->xjPerThread) + blockDim.x * settings->xjPerThread * blockIdx.x;
-			for (size_t __ = 0; __ < settings->n; __++) {
+	for (int _ = 0; _ < iterations; _++) {
+		for (int i = 0; i < settings->xjPerThread; i++) {
+			int site = idx * settings->xjPerThread + i;
+			int previous_site = (threadIdx.x * settings->xjPerThread + i - 1) % settings->N + settings->N * blockIdx.x;
+			int following_site = (threadIdx.x * settings->xjPerThread + i + 1) % settings->N + settings->N * blockIdx.x;
+			for (int __ = 0; __ < settings->n; __++) {
 				step(sites, site, previous_site, following_site, state[idx], settings);
 			}
 		}
@@ -129,7 +134,7 @@ void collectSettings(setting *settings, char **argv){
 	settings->N = settings->xjPerThread * settings->threadsPerBlock;
 	settings->array_size = settings->MCS * settings->N * sizeof(double);
 	settings->blocksPerGrid = settings->MCS;
-	settings->delta = 2 * sqrt(a)
+	settings->delta = 2*sqrt(settings->a);
 
 }
 
