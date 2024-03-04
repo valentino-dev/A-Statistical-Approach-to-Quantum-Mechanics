@@ -21,7 +21,7 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort =
 }
 
 typedef struct{
-	int runs, SII, RS, xjPerThread, n, threadsPerBlock, MCS, MCI, N, total_configurations, blocksPerGrid, array_size;
+	int runs, SII, RS, xjPerThread, n, threadsPerBlock, MCS, MCI, N, total_configurations, blocksPerGrid, array_size, iterations;
 	double a, m0, lambda, mu_sq, f_sq, delta;
 } setting;
 
@@ -37,7 +37,7 @@ __device__ double rand_x(curandState *local_state, double min, double max) {
 }
 
 __device__ double potential_1(double *x, setting *settings) {
-	return settings->mu_sq * pow(*x, 2) * 0.5 + settings->lambda * pow(*x, 4);
+	return settings->mu_sq * *x *x * 0.5 + settings->lambda * *x * *x * *x * *x;
 }
 
 __device__ double potential_2(double *x, setting *settings) {
@@ -58,13 +58,9 @@ __device__ void step(double *sites, int site, int previous_site, int following_s
 	double *xptr = sites+site;
 	double new_x = rand_x(&local_state, *xptr - settings->delta, *xptr + settings->delta);
 	
-	//printf("a new_xptr: %lf, xptr: %lf, delta: %lf\n", new_x, *xptr, settings->delta);
-	//printf("new_x: %lf, old_x: %lf\n", new_x, *xptr);
 	double dS = calc_dS(xptr, sites+previous_site, sites+following_site, &new_x, settings);
-	//printf("S: %lf\n", dS);
 	if (dS < 0 || pow(M_E, -dS) > curand_uniform(&local_state)){
 		*xptr = new_x;
-		//printf("accept S\n");
 	}
 }
 
@@ -89,6 +85,7 @@ __global__ void Simulate(double *sites, int iterations, curandState *state, sett
 			for (int __ = 0; __ < settings->n; __++) {
 				step(sites, site, previous_site, following_site, state[idx], settings);
 			}
+			clock_t time_fds = clock();
 		}
 		__syncthreads();
 	}
@@ -135,29 +132,34 @@ void collectSettings(setting *settings, char **argv){
 	settings->array_size = settings->MCS * settings->N * sizeof(double);
 	settings->blocksPerGrid = settings->MCS;
 	settings->delta = 2*sqrt(settings->a);
+	settings->iterations = settings->MCI / settings->SII;
 
 }
 
 
 int main(int argc, char** argv) {
-	// Checking arguments for error
-	if (argc != 15){
-		printf("ERROR: Not enough arguments!\nPlease specify the following settings: data_path, runs, SII, RS, xjPerThread, n, threadsPerBlock, MCS, MCI, a, m0, lambda, mu_sq, f_sq.\n");
-		return 0;
-	}
-	printf("%d Arguments:", argc);
-	for(size_t i = 0; i < argc; i++){
-		printf(" %i: %s,", i, argv[i]);
-	}
-	printf("\n\n");
-
-
-	// Collecting Settings: data_path, runs, SII, RS, xjPerThread, n, threadsPerBlock, MCS, MCI, a, m0, lambda, mu_sq, f_sq
-	printf("Collecting Settings..\n"); 
 	setting *h_settings, *d_settings;
 	gpuErrchk(cudaMallocHost((void **)&h_settings, sizeof(setting)));
 	gpuErrchk(cudaMalloc((void **)&d_settings, sizeof(setting)));
-	collectSettings(h_settings, argv);
+
+	// Collecting Settings: data_path, runs, SII, RS, xjPerThread, n, threadsPerBlock, MCS, MCI, a, m0, lambda, mu_sq, f_sq
+	printf("Collecting Settings..\n"); 
+	if (argc != 15){
+		printf("ERROR: Not enough arguments!\nPlease specify the following settings: data_path, runs, SII, RS, xjPerThread, n, threadsPerBlock, MCS, MCI, a, m0, lambda, mu_sq, f_sq.\n");
+		printf("Opting for default settings.");
+		char *settings[] = {"", "data/data_default.csv", "1", "1", "0", "2", "10", "512", "1", "100", "0.5", "0.5", "0.0", "2.0", "0.0"};
+		collectSettings(h_settings, settings);
+	}
+	else{
+		printf("%d Arguments:", argc);
+		for(size_t i = 0; i < argc; i++){
+			printf(" %i: %s,", i, argv[i]);
+		}
+		printf("\n\n");
+		collectSettings(h_settings, argv);
+	}
+
+
 	gpuErrchk(cudaMemcpy(d_settings, h_settings, sizeof(setting), cudaMemcpyHostToDevice));
 	printf("Settings: %i runs, %i SII, %i RS, %i xjPerthread, n=%i, %i threadsPerBlock, %i MCS, %i MCI, a=%lf, m0=%lf, lambda=%lf, mu_sq=%lf, f_sq=%lf\n", h_settings->runs, h_settings->SII, h_settings->RS, h_settings->xjPerThread, h_settings->n, h_settings->threadsPerBlock, h_settings->MCS, h_settings->MCI, h_settings->a, h_settings->m0, h_settings->lambda, h_settings->mu_sq, h_settings->f_sq);
 	printf("Degrees of freedom N: %ld \n", h_settings->N);
@@ -199,13 +201,13 @@ int main(int argc, char** argv) {
 
 
 		// Simulating and messuring
-		size_t iterations = h_settings->MCI / h_settings->SII;
-		for (size_t i = 0; i < iterations; i++) {
+		for (size_t i = 0; i < h_settings->iterations; i++) {
 			gpuErrchk(cudaDeviceSynchronize());
 			gpuErrchk(cudaMemcpy(h_sites, d_sites, h_settings->array_size, cudaMemcpyDeviceToHost));
-			Simulate<<<h_settings->blocksPerGrid, h_settings->threadsPerBlock>>>(d_sites, iterations, d_state, d_settings);
+			printf("BpG: %d, TpB: %d", h_settings->blocksPerGrid, h_settings->threadsPerBlock);
+			Simulate<<<h_settings->blocksPerGrid, h_settings->threadsPerBlock>>>(d_sites, h_settings->SII, d_state, d_settings);
 			messure(data_file, h_sites, h_settings);
-			printf("(%3.2lf %%)\n", (i + 1 + k * iterations) * 100.0 / iterations / h_settings->runs);
+			printf("(%3.2lf %%)\n", (i + 1 + k * h_settings->iterations) * 100.0 / h_settings->iterations / h_settings->runs);
 		}
 	}
 	clock_t end = clock();
