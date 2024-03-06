@@ -9,10 +9,10 @@ xjpT=2
 n=10
 TpB=512
 MCS=1
-MCI=10000
+MCI=100
 a=0.5
 m0=0.5
 lambda=0.0
 mu=2.0
 f=0.0
-nvprof bin/simulation.out "data/data_fig5_check.csv" "${runs}" "${SII}" "${RS}" "${xjpT}" "${n}" "${TpB}" "${MCS}" "${MCI}" "${a}" "${m0}" "${lambda}" "${mu}" "${f}"
+nvprof bin/simulation.out "data/data_fig5.csv" "${runs}" "${SII}" "${RS}" "${xjpT}" "${n}" "${TpB}" "${MCS}" "${MCI}" "${a}" "${m0}" "${lambda}" "${mu}" "${f}"

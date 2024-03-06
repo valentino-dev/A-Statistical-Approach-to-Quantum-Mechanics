@@ -21,13 +21,13 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort =
 }
 
 typedef struct{
-	int runs, SII, RS, xjPerThread, n, threadsPerBlock, MCS, MCI, N, total_configurations, blocksPerGrid, array_size, iterations;
+	int runs, SII, ntherm, xjPerThread, nhit, threadsPerBlock, MCS, MCI, N, total_configurations, blocksPerGrid, array_size, iterations;
 	double a, m0, lambda, mu_sq, f_sq, delta;
 } setting;
 
 
 __global__ void init_rand(curandState *state) {
-	unsigned int idx = blockDim.x * blockIdx.x + threadIdx.x;
+	int idx = blockDim.x * blockIdx.x + threadIdx.x;
 	curand_init(42, idx, 0, &state[idx]);
 }
 
@@ -37,37 +37,47 @@ __device__ double rand_x(curandState *local_state, double min, double max) {
 }
 
 __device__ double potential_1(double *x, setting *settings) {
-	return settings->mu_sq * *x *x * 0.5 + settings->lambda * *x * *x * *x * *x;
+	return settings->mu_sq * *x * *x * 0.5 + settings->lambda * *x * *x * *x * *x;
+}
+
+double h_potential_1(double *x, setting *settings) {
+	return settings->mu_sq * *x * *x * 0.5 + settings->lambda * *x * *x * *x * *x;
 }
 
 __device__ double potential_2(double *x, setting *settings) {
 	return settings->lambda * pow(*x * *x - settings->f_sq, 2);
 }
 
-__device__ double calc_S_of_xj(double x, double *ptr, double *previous_site, double *following_site, setting *settings) {
+__device__ double localAction(double x, double *ptr, double *previous_site, double *following_site, setting *settings) {
 	return settings->m0 * 0.5 * (pow(*following_site - x, 2) + pow(x - *previous_site, 2)) / settings->a +
-		settings->a * (potential_1(&x, settings) + potential_1(ptr - 1, settings));
+		settings->a * (potential_1(&x, settings) + potential_1(previous_site, settings));
 }
 
 __device__ double calc_dS(double *xptr, double *previous_site, double *following_site, double *new_xptr, setting *settings) {
-	return calc_S_of_xj(*new_xptr, xptr, previous_site, following_site, settings) - 
-		calc_S_of_xj(*xptr, xptr, previous_site, following_site, settings);
+	return localAction(*new_xptr, xptr, previous_site, following_site, settings) - 
+		localAction(*xptr, xptr, previous_site, following_site, settings);
 }
 
-__device__ void step(double *sites, int site, int previous_site, int following_site, curandState local_state, setting *settings) {
+__device__ void step(double *sites, int site, int previous_site, int following_site, curandState *state, setting *settings) {
+	curandState local_state = *state;
+
 	double *xptr = sites+site;
 	double new_x = rand_x(&local_state, *xptr - settings->delta, *xptr + settings->delta);
+	//printf("site: %d, old: %lf, new: %lf; ", site, *xptr, new_x);
+
 	
 	double dS = calc_dS(xptr, sites+previous_site, sites+following_site, &new_x, settings);
+	//print("%lf, ", dS);
 	if (dS < 0 || pow(M_E, -dS) > curand_uniform(&local_state)){
 		*xptr = new_x;
 	}
+	*state = local_state;
 }
 
 __device__ void Print_Action(double *sites, setting *settings){
 	double S = 0;
 	for (size_t i = 0; i < settings->N; i++)
-		S += settings->m0 * 0.5 * (pow(sites[(i+1)%settings->N] - sites[i], 2)) / settings->a + settings->a * potential_1(&sites[i], settings);
+		S += settings->m0 * 0.5 * (pow(sites[(i+1)%settings->N] - sites[i], 2)) / settings->a + settings->a * potential_1(sites + i, settings);
 
 	printf("S: %lf\n", S);
 	
@@ -75,15 +85,17 @@ __device__ void Print_Action(double *sites, setting *settings){
 
 // cuda c kernel
 __global__ void Simulate(double *sites, int iterations, curandState *state, setting *settings) {
-	unsigned int idx = blockDim.x * blockIdx.x + threadIdx.x;
-
-	for (int _ = 0; _ < iterations; _++) {
-		for (int i = 0; i < settings->xjPerThread; i++) {
+	int idx = blockDim.x * blockIdx.x + threadIdx.x;
+	//printf("\n");
+	for (size_t _ = 0; _ < iterations; _++) {
+		for (size_t i = 0; i < settings->xjPerThread; i++) {
 			int site = idx * settings->xjPerThread + i;
-			int previous_site = (threadIdx.x * settings->xjPerThread + i - 1) % settings->N + settings->N * blockIdx.x;
+			int previous_site = (threadIdx.x * settings->xjPerThread + i - 1 + settings->N) % settings->N + settings->N * blockIdx.x;
 			int following_site = (threadIdx.x * settings->xjPerThread + i + 1) % settings->N + settings->N * blockIdx.x;
-			for (int __ = 0; __ < settings->n; __++) {
-				step(sites, site, previous_site, following_site, state[idx], settings);
+			//printf("idx: %d, site: %d, prev site: %d, flow site: %d; ", idx, site, previous_site, following_site);
+			//printf("hitting site: %d, ", site);
+			for (size_t __ = 0; __ < settings->nhit; __++) {
+				step(sites, site, previous_site, following_site, state + idx, settings);
 			}
 			clock_t time_fds = clock();
 		}
@@ -107,17 +119,29 @@ void messure(FILE *file, double *values, setting *settings) {
 
 __global__ void initial_ensamble(double *sites, curandState *state, setting *settings){
 	unsigned int idx = blockDim.x * blockIdx.x + threadIdx.x;
-	for (size_t i = 0; i < settings->n; i++) {
-		sites[idx * settings->n + i] = rand_x(state + idx, -100, 100);
+	for (size_t i = 0; i < settings->xjPerThread; i++) {
+		sites[idx * settings->xjPerThread + i] = rand_x(state + idx, -100, 100);
 	}
 }
 
+double getAction(double *sites, setting *settings){
+	double S = 0;
+
+	for(size_t i = 0; i < settings->N; i++){
+		double dS = settings->m0 * 0.5 * (pow(sites[(i+1)%settings->N] - sites[i], 2)) / settings->a + settings->a * h_potential_1(sites + i, settings);
+		//printf("dS: %lf", dS);
+		S += dS;
+	}
+	return S;
+}
+
 void collectSettings(setting *settings, char **argv){
+
 	settings->runs 				= atof(argv[2]);
 	settings->SII 				= atof(argv[3]);
-	settings->RS 				= atof(argv[4]);
+	settings->ntherm 				= atof(argv[4]);
 	settings->xjPerThread 		= atof(argv[5]);
-	settings->n 				= atof(argv[6]);
+	settings->nhit 				= atof(argv[6]);
 	settings->threadsPerBlock 	= atof(argv[7]);
 	settings->MCS 				= atof(argv[8]);
 	settings->MCI 				= atof(argv[9]);
@@ -142,12 +166,15 @@ int main(int argc, char** argv) {
 	gpuErrchk(cudaMallocHost((void **)&h_settings, sizeof(setting)));
 	gpuErrchk(cudaMalloc((void **)&d_settings, sizeof(setting)));
 
-	// Collecting Settings: data_path, runs, SII, RS, xjPerThread, n, threadsPerBlock, MCS, MCI, a, m0, lambda, mu_sq, f_sq
+	// Collecting Settings: data_path, runs, SII, ntherm, xjPerThread, n, threadsPerBlock, MCS, MCI, a, m0, lambda, mu_sq, f_sq
 	printf("Collecting Settings..\n"); 
+
+
+
 	if (argc != 15){
-		printf("ERROR: Not enough arguments!\nPlease specify the following settings: data_path, runs, SII, RS, xjPerThread, n, threadsPerBlock, MCS, MCI, a, m0, lambda, mu_sq, f_sq.\n");
+		printf("ERROR: Not enough arguments!\nPlease specify the following settings: 	data_path, 					runs, 	SII, 	ntherm, 	xjPerThread, 	nhit, 		threadsPerBlock, 	MCS, 	MCI, 	a,		m0, 	lambda, 	mu_sq, 		f_sq.\n");
 		printf("Opting for default settings.");
-		char *settings[] = {"", "data/data_default.csv", "1", "1", "0", "2", "10", "512", "1", "100", "0.5", "0.5", "0.0", "2.0", "0.0"};
+		char *settings[] = {"", 														"data/data_default.csv", 	"1", 	"1", 	"0", 		"2", 			"10", 		"512", 				"1", 	"100", 	"0.5", 	"0.5", 	"0.0", 		"2.0", 		"0.0"};
 		collectSettings(h_settings, settings);
 	}
 	else{
@@ -161,7 +188,7 @@ int main(int argc, char** argv) {
 
 
 	gpuErrchk(cudaMemcpy(d_settings, h_settings, sizeof(setting), cudaMemcpyHostToDevice));
-	printf("Settings: %i runs, %i SII, %i RS, %i xjPerthread, n=%i, %i threadsPerBlock, %i MCS, %i MCI, a=%lf, m0=%lf, lambda=%lf, mu_sq=%lf, f_sq=%lf\n", h_settings->runs, h_settings->SII, h_settings->RS, h_settings->xjPerThread, h_settings->n, h_settings->threadsPerBlock, h_settings->MCS, h_settings->MCI, h_settings->a, h_settings->m0, h_settings->lambda, h_settings->mu_sq, h_settings->f_sq);
+	printf("Settings: %i runs, %i SII, %i ntherm, %i xjPerthread, n=%i, %i threadsPerBlock, %i MCS, %i MCI, a=%lf, m0=%lf, lambda=%lf, mu_sq=%lf, f_sq=%lf\n", h_settings->runs, h_settings->SII, h_settings->ntherm, h_settings->xjPerThread, h_settings->nhit, h_settings->threadsPerBlock, h_settings->MCS, h_settings->MCI, h_settings->a, h_settings->m0, h_settings->lambda, h_settings->mu_sq, h_settings->f_sq);
 	printf("Degrees of freedom N: %ld \n", h_settings->N);
 	printf("Threads per block: %d; Blocks per grid: %d\n", h_settings->threadsPerBlock, h_settings->blocksPerGrid);
 
@@ -192,23 +219,26 @@ int main(int argc, char** argv) {
 	// Starting runs
 	clock_t start = clock();
 	for (size_t k = 0; k < h_settings->runs; k++) {
-		gpuErrchk(cudaMemcpy(d_sites, h_sites, h_settings->array_size, cudaMemcpyHostToDevice));
 		initial_ensamble<<<h_settings->blocksPerGrid, h_settings->threadsPerBlock>>>(d_sites, d_state, d_settings);
 
 
 		// Wait until the Simulation comes to equilibrium
-		Simulate<<<h_settings->blocksPerGrid, h_settings->threadsPerBlock>>>(d_sites, h_settings->RS, d_state, d_settings);
+		Simulate<<<h_settings->blocksPerGrid, h_settings->threadsPerBlock>>>(d_sites, h_settings->ntherm, d_state, d_settings);
 
 
 		// Simulating and messuring
 		for (size_t i = 0; i < h_settings->iterations; i++) {
 			gpuErrchk(cudaDeviceSynchronize());
 			gpuErrchk(cudaMemcpy(h_sites, d_sites, h_settings->array_size, cudaMemcpyDeviceToHost));
-			printf("BpG: %d, TpB: %d", h_settings->blocksPerGrid, h_settings->threadsPerBlock);
 			Simulate<<<h_settings->blocksPerGrid, h_settings->threadsPerBlock>>>(d_sites, h_settings->SII, d_state, d_settings);
 			messure(data_file, h_sites, h_settings);
-			printf("(%3.2lf %%)\n", (i + 1 + k * h_settings->iterations) * 100.0 / h_settings->iterations / h_settings->runs);
+			//printf("Action: %lf\n", getAction(h_sites, h_settings));
+
+			clock_t check = clock();
+			printf("\r(%3.2lf %%) Done in %0.2lfs.", (i + 1 + k * h_settings->iterations) * 100.0 / h_settings->iterations / h_settings->runs, ((double)(check-start) / CLOCKS_PER_SEC /i)*(h_settings->iterations-i));
+			fflush(stdout);
 		}
+		printf("\n");
 	}
 	clock_t end = clock();
 	fclose(data_file);
@@ -224,7 +254,7 @@ int main(int argc, char** argv) {
 	// End Results
 	printf("Done.\n");
 	double time_spend = (double)(end - start) / CLOCKS_PER_SEC;
-	double benchmark = h_settings->MCI * h_settings->MCS * h_settings->N * h_settings->runs / time_spend;
+	double benchmark = h_settings->MCI * h_settings->MCS * h_settings->N * h_settings->runs * h_settings->nhit/ time_spend;
 	printf("Configurations Messured: %ld; Time Spend on Routine: %0.2lfs; "
 			"Benchmark: %0.2e sites/s\n",
 			h_settings->total_configurations, time_spend, benchmark);
