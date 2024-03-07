@@ -235,7 +235,8 @@ int main(int argc, char** argv) {
 			//printf("Action: %lf\n", getAction(h_sites, h_settings));
 
 			clock_t check = clock();
-			printf("\r(%3.2lf %%) Done in %0.2lfs.", (i + 1 + k * h_settings->iterations) * 100.0 / h_settings->iterations / h_settings->runs, ((double)(check-start) / CLOCKS_PER_SEC /i)*(h_settings->iterations-i));
+			double time_seconds = ((double)(check-start) / CLOCKS_PER_SEC /i)*(h_settings->iterations-i);
+			printf("\r(%3.2lf %%) Done in %0.2lfs. (%0.2lfh)", (i + 1 + k * h_settings->iterations) * 100.0 / h_settings->iterations / h_settings->runs, time_seconds, time_seconds/3600);
 			fflush(stdout);
 		}
 		printf("\n");
