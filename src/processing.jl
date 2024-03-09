@@ -13,7 +13,7 @@ println("Done loading.")
 
 
 
-if false
+if true
     println("Ploting Action Decay..")
     start = 30
     sd_data = data[start:start+10, :]
@@ -21,12 +21,12 @@ if false
     action(x_0, x_1) = m0 .*(x_1.-x_0) .^2 ./a .+potential(x_0) .*a
     tot_action = sum(action(sd_data, circshift(sd_data, (0, -1))), dims=2)
     
-    plot(eachindex(tot_action).+start, tot_action, label="Simulated data")
+    plot(eachindex(tot_action).+start, tot_action, label="Simulated  data")
 
     plot!(minorgrid=true, grid=true, gridwidth=1, gridalpha=0.4, gridstyle=:dot)
     title!("Action decay")
-    xlabel!("Monte Carlo time [Iterations]")
-    ylabel!("Action")
+    xlabel!(L"t")
+    ylabel!(L"S(t)")
 
     savefig("plots/ActionDecay.pdf")
     println("Done ploting.")
@@ -49,10 +49,10 @@ end
 
 if false
     println("Plotting correrlation function..")
-    Δτ = 0.5
-    τ = 1:Δτ:2.5
-    t = τ/Δτ
-    corr_data = data[36:end, :]
+    Dtau = 0.5
+    tau = 1:Dtau:5
+    t = tau/Dtau
+    corr_data = data[50:1:end, :]
     correlation = zeros(size(t, 1), size(corr_data, 1))
     for i=eachindex(t)
         singleton = ones(size(corr_data, 1))
@@ -61,16 +61,45 @@ if false
     end
     bined_correlation = ones(size(t, 1))
     mean!(bined_correlation, correlation)
-    
-    plots = scatter(t*Δτ, bined_correlation, yaxis=:log, label="Simulated Data", marker=:x)
+    println(size)
+    scatter(t*Dtau, bined_correlation, yaxis=:log, label="Simulated Data", marker=:x)
 
     plot!(minorgrid=true, grid=true, gridwidth=1, gridalpha=0.4, gridstyle=:dot)
     title!("Correlation function")
     xlabel!(L"\tau")
     ylabel!(L"\langle x(0)x(\tau)\rangle")
 
-    savefig(plots, "plots/CorrelationFunction.pdf")
-    println(τ, bined_correlation)
+    savefig("plots/CorrelationFunction.pdf")
+    println(size(tau))
+    println(size(bined_correlation))
+    println("Done ploting.")
+end
+
+if true
+    println("Plotting correrlation function error..")
+    Dtau = 0.5
+    tau = 1:Dtau:5
+    t = tau/Dtau
+    corr_data = data[50:1:end, :]
+    correlation = zeros(size(t, 1), size(corr_data, 1))
+    for i=eachindex(t)
+        singleton = ones(size(corr_data, 1))
+        mean!(singleton, corr_data.*circshift(corr_data, (0, t[i])))
+        correlation[i, :] = singleton[:]
+    end
+    bined_correlation = ones(size(t, 1))
+    mean!(bined_correlation, correlation)
+    println(size)
+    scatter(t*Dtau, bined_correlation, yaxis=:log, label="Simulated Data", marker=:x)
+
+    plot!(minorgrid=true, grid=true, gridwidth=1, gridalpha=0.4, gridstyle=:dot)
+    title!("Correlation function error")
+    xlabel!(L"\tau")
+    ylabel!(L"\langle x(0)x(\tau)\rangle")
+
+    savefig("plots/CorrelationFunctionError.pdf")
+    println(size(tau))
+    println(size(bined_correlation))
     println("Done ploting.")
 end
 
@@ -78,7 +107,7 @@ function Gamma(t, _alpha, _beta, a_est, data)
     return mean((data[1:(size(data, 1)-t+1), _alpha].-a_est[_alpha]).*(data[t:end, _beta].-a_est[_beta]))
 end
 
-if true
+if false
     eff_data = data[1:10000, :]
     println("Plotting Gamma Method..")
     a_est = ones(size(eff_data, 2))
@@ -124,6 +153,6 @@ if false
     title!(L"\textrm{Statistical independecy: mean}=23.74")
     xlabel!(L"t")
     ylabel!(L"\textrm{Frequency when }\Gamma(t)=0")
-    savefig("plots/Relaxation_time.pdf")
+    savefig("plots/StatistcalIndependeny.pdf")
     println("Done plotting.")
 end
