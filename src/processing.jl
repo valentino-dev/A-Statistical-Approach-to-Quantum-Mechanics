@@ -77,20 +77,18 @@ end
 
 if true
     println("Plotting correrlation function error..")
-    Dtau = 0.5
-    tau = 1:Dtau:5
-    t = tau/Dtau
     corr_data = data[50:1:end, :]
-    correlation = zeros(size(t, 1), size(corr_data, 1))
-    for i=eachindex(t)
-        singleton = ones(size(corr_data, 1))
-        mean!(singleton, corr_data.*circshift(corr_data, (0, t[i])))
-        correlation[i, :] = singleton[:]
-    end
-    bined_correlation = ones(size(t, 1))
-    mean!(bined_correlation, correlation)
-    println(size)
-    scatter(t*Dtau, bined_correlation, yaxis=:log, label="Simulated Data", marker=:x)
+    correlation = zeros(size(corr_data, 1), size(corr_data, 2))
+
+    correlation = corr_data.*circshift(corr_data, (0, 1))
+
+    corr_meanest = ones(size(corr_data, 2))
+    mean!(corr_meanest, correlation)
+
+    
+    mean!((correlation-corr_meanest)^2)
+
+
 
     plot!(minorgrid=true, grid=true, gridwidth=1, gridalpha=0.4, gridstyle=:dot)
     title!("Correlation function error")
@@ -98,8 +96,6 @@ if true
     ylabel!(L"\langle x(0)x(\tau)\rangle")
 
     savefig("plots/CorrelationFunctionError.pdf")
-    println(size(tau))
-    println(size(bined_correlation))
     println("Done ploting.")
 end
 
