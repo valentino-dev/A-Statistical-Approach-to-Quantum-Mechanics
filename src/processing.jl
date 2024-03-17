@@ -8,12 +8,12 @@ m0 = 0.5
 pgfplotsx()
 
 println("Loading data..")
-data = Matrix(CSV.read("data/data_fig5_10k.csv", DataFrame, header=false))
+data = Matrix(CSV.read("data/data_fig5_10k_RS_1k.csv", DataFrame, header=false))
 println("Done loading.")
 
 
 
-if true
+if false
     println("Ploting Action Decay..")
     start = 30
     sd_data = data[start:start+10, :]
@@ -75,27 +75,143 @@ if false
     println("Done ploting.")
 end
 
-if true
-    println("Plotting correrlation function error..")
-    corr_data = data[50:1:end, :]
+if false
+    println("Plotting correrlation function error of bin size..")
+    corr_data = data[1:end, :]
     correlation = zeros(size(corr_data, 1), size(corr_data, 2))
+    correlation = corr_data .* circshift(corr_data, (0, 1))
+    corr_data = correlation
 
-    correlation = corr_data.*circshift(corr_data, (0, 1))
-
-    corr_meanest = ones(size(corr_data, 2))
-    mean!(corr_meanest, correlation)
-
-    
-    mean!((correlation-corr_meanest)^2)
+    std_dev_means = zeros((Int32(log10(size(corr_data, 1))+1)))
+    println(std_dev_means)
 
 
+    for i in eachindex(std_dev_means)
+        #corr_bined = zeros()
 
-    plot!(minorgrid=true, grid=true, gridwidth=1, gridalpha=0.4, gridstyle=:dot)
-    title!("Correlation function error")
-    xlabel!(L"\tau")
-    ylabel!(L"\langle x(0)x(\tau)\rangle")
+        corr_shape = (10^(i-1), 10^(size(std_dev_means, 1)-i), size(corr_data, 2))
+        corr_bined = reshape(corr_data, corr_shape)
+        println("bined shape: ", corr_shape)
+
+        #println(corr_bined)
+
+        corr_bined_mean = ones(size(corr_bined, 1), size(corr_bined, 3))
+        println("bined meaned shape: ", size(corr_bined_mean))
+        for k=1:size(corr_bined, 1)
+            temp = ones(size(corr_bined, 3))
+            mean!(temp, corr_bined[k, :, :]')
+            corr_bined_mean[k, :] = temp[:]
+        end
+
+        #println(corr_bined[:, :, :])
+        
+        #println(corr_bined_mean[:, :])
+
+        corr_meanest = ones(size(corr_bined_mean, 2))
+        println("est of mean: ", size(corr_meanest))
+        mean!(corr_meanest, corr_bined_mean')
+
+        #println(corr_meanest)
+
+        varianz = ones(size(corr_meanest, 1))
+        res = broadcast(-, corr_bined_mean, corr_meanest').^2
+        
+        println("varianz shape: ", size(varianz))
+        mean!(varianz, res')
+
+        #println(varianz)
+        std_dev = sqrt.(varianz)*1/sqrt(size(corr_data, 1))
+        println("std shape: ", size(std_dev, 1))
+        std_dev_means[i] = mean(std_dev)
+
+        
+    end
+
+    #println("stdevmean: ", std_dev_means)
+    #println(Vector(2:4))
+    x = ones(size(std_dev_means, 1))*10
+    for i in eachindex(std_dev_means)
+        x[i] = x[i]^i
+    end
+    scatter(x, std_dev_means, label="Simulated data")
+
+    plot!(minorgrid=true, grid=true, gridwidth=1, gridalpha=0.4, gridstyle=:dot, xaxis=:log)
+    title!("Correlation function error of bin size")
+    xlabel!(L"N_C \textrm{ per bin}")
+    ylabel!(L"\delta\bar{x}")
 
     savefig("plots/CorrelationFunctionError.pdf")
+    println("Done ploting.")
+end
+
+if true
+    println("Plotting correrlation function error for reducing bin size..")
+    corr_data = data[1:end, :]
+    correlation = zeros(size(corr_data, 1), size(corr_data, 2))
+    correlation = corr_data .* circshift(corr_data, (0, 1))
+    corr_data = correlation
+
+    std_dev_means = zeros((Int32(log10(size(corr_data, 1))+1)))
+    println(std_dev_means)
+
+
+    for i in eachindex(std_dev_means)
+        #corr_bined = zeros()
+
+        corr_shape = (10^(size(std_dev_means, 1)-i-1), 10, size(corr_data, 2))
+        corr_bined = reshape(corr_data, corr_shape)
+        println("bined shape: ", corr_shape)
+
+        #println(corr_bined)
+
+        corr_bined_mean = ones(size(corr_bined, 1), size(corr_bined, 3))
+        println("bined meaned shape: ", size(corr_bined_mean))
+        for k=1:size(corr_bined, 1)
+            temp = ones(size(corr_bined, 3))
+            mean!(temp, corr_bined[k, :, :]')
+            corr_bined_mean[k, :] = temp[:]
+        end
+        corr_data = deepcopy(corr_bined_mean)
+
+        #println(corr_bined[:, :, :])
+        
+        #println(corr_bined_mean[:, :])
+
+        corr_meanest = ones(size(corr_bined_mean, 2))
+        println("est of mean: ", size(corr_meanest))
+        mean!(corr_meanest, corr_bined_mean')
+
+
+        #println(corr_meanest)
+
+        varianz = ones(size(corr_meanest, 1))
+        res = broadcast(-, corr_bined_mean, corr_meanest').^2
+        
+        println("varianz shape: ", size(varianz))
+        mean!(varianz, res')
+
+        #println(varianz)
+        std_dev = sqrt.(varianz)*1/sqrt(size(corr_data, 1))
+        println("std shape: ", size(std_dev, 1))
+        std_dev_means[i] = mean(std_dev)
+
+        
+    end
+
+    #println("stdevmean: ", std_dev_means)
+    #println(Vector(2:4))
+    x = ones(size(std_dev_means, 1))*10
+    for i in eachindex(std_dev_means)
+        x[i] = x[i]^i
+    end
+    scatter(x, std_dev_means, label="Simulated data")
+
+    plot!(minorgrid=true, grid=true, gridwidth=1, gridalpha=0.4, gridstyle=:dot, xaxis=:log)
+    title!("Correlation function error of reducing bin size")
+    xlabel!(L"N_C \textrm{ per bin}")
+    ylabel!(L"\delta\bar{x}")
+
+    savefig("plots/ReducingCorrelationFunctionError.pdf")
     println("Done ploting.")
 end
 
