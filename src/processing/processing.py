@@ -4,15 +4,18 @@ import pandas as pd
 import dask.dataframe as dd
 import dask.array as da
 import scipy.odr
+import sys
+
+sys.path.append("/home/angelo/Git/olib")
 from olib import *
 
 plt.rcParams.update({"text.usetex": True, "font.family": "serif"})
 
-#path = "data/data_fig5_1k_RS_100.csv"
+# path = "data/data_fig5_1k_RS_100.csv"
 path = "data/data_fig5_10k_RS_1k.csv"
-#path = "data/data_fig5_100k.csv"
+# path = "data/data_fig5_100k.csv"
 
-'''
+"""
 def autoCorrelationErrorPerBinStep():
     data = dd.read_csv(path, sep=";", header=None).to_dask_array(lengths=True)
     correlation = data * np.roll(data, 1, 1)
@@ -39,12 +42,13 @@ def autoCorrelationErrorPerBinStep():
     ax = plotData(ax, table, polyfit=0, fmt="x")
     ax = setSpace(ax, table)
     plt.savefig("plots/CorrelationError.pdf", dpi=500)
-'''
+"""
+
 
 def autoCorrelationErrorPerBinSize():
     # read and crop data
     data = dd.read_csv(path, sep=";", header=None).to_dask_array(lengths=True)
-    length = 2**(da.floor(da.log2(data.shape[0])))
+    length = 2 ** (da.floor(da.log2(data.shape[0])))
     print(length)
     data = data[:length, :]
     print(data.shape)
@@ -54,40 +58,53 @@ def autoCorrelationErrorPerBinSize():
     print(correlation)
 
     # rebin and calc error
-    bin_sizes = 2**np.arange(1, int(np.log2(int(correlation.shape[0]))))
-    #bin_sizes = np.arange(1, correlation.shape[0], 10)
+    bin_sizes = 2 ** np.arange(1, int(np.log2(int(correlation.shape[0]))))
+    # bin_sizes = np.arange(1, correlation.shape[0], 10)
     print(type(bin_sizes))
     std_of_bins = np.zeros((bin_sizes.shape[0], correlation.shape[1]))
     print(std_of_bins)
     for i in range(std_of_bins.shape[0]):
         print("i:", i)
-        corr_shape = (correlation.shape[0]/bin_sizes[i], bin_sizes[i], correlation.shape[1])
+        corr_shape = (
+            correlation.shape[0] / bin_sizes[i],
+            bin_sizes[i],
+            correlation.shape[1],
+        )
         correlation_bined = da.reshape(correlation, corr_shape)
         correlation_bined_mean = correlation_bined.mean(1)
-        std = da.std(correlation_bined_mean, 0)/correlation_bined.shape[0]
-        print(std.dask)
+
+        std = (
+            da.sum(correlation_bined_mean**2 - da.mean(correlation_bined_mean, 0), 0)
+            / (correlation_bined_mean.shape[0] - 1)
+            / correlation_bined_mean.shape[0] ** (1 / 2)
+        )
+        # std = da.std(correlation_bined_mean, 0)/correlation_bined.shape[0]
+        # print(std.dask)
+        print(std_of_bins.shape[0] - i)
         std_of_bins[i, :] = std.compute()[:]
-        #std_of_bins[i] = std.mean().compute()
+        # std_of_bins[i] = std.mean().compute()
 
-
-    #plot
-    X = bin_sizes[:-3]
+    # plot
+    X = bin_sizes[1:-3]
     Xerr = np.zeros(X.shape)
-    Y = std_of_bins.mean(1)[:-3]
+    Y = std_of_bins.mean(1)[1:-3]
     Yerr = np.zeros(Y.shape)
-    table = Table(X, Xerr, Y, Yerr, "Correlation Error per bin size", "bin size", r"$\sigma_x$")
+    # table = Table(X, Xerr, Y, Yerr, "Correlation Error per bin size", "bin size", r"$\sigma_x$")
 
     fig, ax = plt.subplots()
-    #for i in [10, 13, 15, 110, 123, 400]:
-        #ax.plot(bin_sizes[:-3], std_of_bins[:-3, i])
-    ax = plotData(ax, table, polyfit=0, fmt="x")
-    ax = setSpace(ax, table)
-    plt.savefig("plots/CorrelationErrorPerBinSizeMean.pdf", dpi=500)
+    # for i in [10, 13, 15, 110, 123, 400]:
+    # ax.plot(bin_sizes[:-3], std_of_bins[:-3, i])
+    # ax = plotData(ax, table, polyfit=0, fmt="x")
+    # ax = setSpace(ax, table)
+    # plt.savefig("plots/CorrelationErrorPerBinSizeMean.pdf", dpi=500)
+    ax.plot(X, Y)
+    plt.show()
+
 
 def calcCorrelation():
     # read and crop data
     data = dd.read_csv(path, sep=";", header=None).to_dask_array(lengths=True)
-    length = 10**(da.floor(da.log10(data.shape[0])))
+    length = 10 ** (da.floor(da.log10(data.shape[0])))
     print(length)
     data = data[:length, :]
     print(data.shape)
@@ -95,7 +112,7 @@ def calcCorrelation():
     fig, ax = plt.subplots()
     tao = np.arange(1, 5)
     dt = 0.5
-    t = toa*dt
+    t = tao * dt
     x_zero = np.zeros(tao.shape[0])
 
     for i in range(1, 5):
@@ -104,31 +121,32 @@ def calcCorrelation():
         x_zero = correlation.mean()
 
         # rebin and calc error
-        bin_sizes = 10**np.arange(1, int(np.log10(int(correlation.shape[0]))))
+        bin_sizes = 10 ** np.arange(1, int(np.log10(int(correlation.shape[0]))))
         std_of_bins = np.zeros((bin_sizes.shape[0]))
-        corr_shape = (correlation.shape[0]/bin_sizes[i], bin_sizes[i], correlation.shape[1])
+        corr_shape = (
+            correlation.shape[0] / bin_sizes[i],
+            bin_sizes[i],
+            correlation.shape[1],
+        )
         correlation_bined = da.reshape(correlation, corr_shape)
         correlation_bined_mean = correlation_bined.mean(1)
-        std = da.std(correlation_bined_mean, 0)/correlation_bined.shape[0]
+        std = da.std(correlation_bined_mean, 0) / correlation_bined.shape[0]
         err = std.mean().compute()
-        ax.errorbar(t, correlation[])
+        # ax.errorbar(t, correlation[])
 
+    # plot
+    # X = bin_sizes[:-3]
+    # Xerr = np.zeros(X.shape)
+    # Y = std_of_bins.mean(1)[:-3]
+    # Yerr = np.zeros(Y.shape)
+    # table = Table(X, Xerr, Y, Yerr, "Correlation Error per bin size", "bin size", r"$\sigma_x$")
 
-
-    #plot
-    #X = bin_sizes[:-3]
-    #Xerr = np.zeros(X.shape)
-    #Y = std_of_bins.mean(1)[:-3]
-    #Yerr = np.zeros(Y.shape)
-    #table = Table(X, Xerr, Y, Yerr, "Correlation Error per bin size", "bin size", r"$\sigma_x$")
-
-    #fig, ax = plt.subplots()
-    #for i in [10, 13, 15, 110, 123, 400]:
-        #ax.plot(bin_sizes[:-3], std_of_bins[:-3, i])
-    #ax = plotData(ax, table, polyfit=0, fmt="x")
-    #ax = setSpace(ax, table)
+    # fig, ax = plt.subplots()
+    # for i in [10, 13, 15, 110, 123, 400]:
+    # ax.plot(bin_sizes[:-3], std_of_bins[:-3, i])
+    # ax = plotData(ax, table, polyfit=0, fmt="x")
+    # ax = setSpace(ax, table)
     plt.savefig("plots/CorrelationErrorPerBinSizeMean.pdf", dpi=500)
-
 
 
 autoCorrelationErrorPerBinSize()
