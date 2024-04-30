@@ -6,13 +6,13 @@ import dask.array as da
 import scipy.odr
 import sys
 
-sys.path.append("/home/angelo/Git/olib")
-from olib import *
+#sys.path.append("/home/angelo/Git/olib")
+#from olib import *
 
 plt.rcParams.update({"text.usetex": True, "font.family": "serif"})
 
 # path = "data/data_fig5_1k_RS_100.csv"
-path = "data/data_fig5_10k_RS_1k.csv"
+path = "data/data_RS100_CONF8192_SII1.csv"
 # path = "data/data_fig5_100k.csv"
 
 """
@@ -54,8 +54,8 @@ def autoCorrelationErrorPerBinSize():
     print(data.shape)
 
     # calc correltaion
-    correlation = da.mean(data * da.roll(data, 1, 1), 1).compute()
-    print("Configurations: ", correlation.shape[0])
+    correlation = data * da.roll(data, 1, 1)
+    print(correlation.shape)
 
     # rebin and calc error
     bin_sizes = 2 ** np.arange(1, int(np.log2(int(data.shape[0]))))
@@ -63,8 +63,9 @@ def autoCorrelationErrorPerBinSize():
     for i in range(deltas.shape[0]):
         print("i: ", i)
         corr_shape = (
-            int(correlation.shape[0] / bin_sizes[i]),
-            bin_sizes[i]
+            correlation.shape[0] / bin_sizes[i],
+            bin_sizes[i],
+            correlation.shape[1]
         )
         print("Corr Shape: ", corr_shape)
         correlation_bined = da.reshape(correlation, corr_shape)
@@ -74,7 +75,15 @@ def autoCorrelationErrorPerBinSize():
 
         print(deltas.shape[0] - i)
         deltas[i, :] = delta.compute()
-
+        std = (
+            da.sum((correlation_bined_mean - da.mean(correlation_bined_mean, 0))**2, 0)
+            / ((correlation_bined_mean.shape[0] - 1) * correlation_bined_mean.shape[0])
+        ) ** (1 / 2)
+        #std = da.std(correlation_bined_mean, 0)/correlation_bined_mean.shape[0]**(1/2)
+        # print(std.dask)
+        print(std_of_bins.shape[0] - i)
+        std_of_bins[i,:] = std.compute()[:]
+        # std_of_bins[i] = std.mean().compute()
     # plot
     X = bin_sizes[1:-3]
     Xerr = np.zeros(X.shape)
@@ -87,57 +96,84 @@ def autoCorrelationErrorPerBinSize():
     # ax.plot(bin_sizes[:-3], std_of_bins[:-3, i])
     # ax = plotData(ax, table, polyfit=0, fmt="x")
     # ax = setSpace(ax, table)
-    # plt.savefig("plots/CorrelationErrorPerBinSizeMean.pdf", dpi=500)
-    ax.plot(X, Y)
-    plt.show()
+    plt.savefig("plots/CorrelationErrorPerBinSizeMean.pdf", dpi=500)
+    # ax.plot(X, Y)
+
+def calculateCorrelation(observables, tao):
+    return data * da.roll(observables, tao)
+
+def binData(data, bin_count, bin_size):
+    return da.reshape(data, (bin_count, bin_size))
+
+def exponentialFunction(beta, x):
+    return beta[0]+beta[1]*np.exp(beta[2]*x+beta[3])
 
 def f(beta, x):
     return beta[0]+beta[1]*np.exp(beta[2]*x+beta[3])
 
 
 def calcCorrelation():
+    bin_size = 256
+    time_slice = 0.5
+
     # read and crop data
     data = dd.read_csv(path, sep=";", header=None).to_dask_array(lengths=True)
-    length = 10 ** (da.floor(da.log10(data.shape[0])))
-    print(length)
+    length = 2 ** (da.floor(da.log2(data.shape[0])))
+    bin_count = length/bin_size
+    print(f"{length} sites are going to be used")
+
+
     data = data[:length, :]
-    print(data.shape)
+    data = da.reshape(data, (bin_count, bin_size, data.shape[1]))
 
-    tao = np.arange(0, 5)
-    dt = 0.5
-    t = tao * dt
-    x_zero = np.zeros(tao.shape[0])
-    x_zero_autocorr = np.zeros(tao.shape[0])
 
-    for i in range(0, 5):
+    lattice_time = np.arange(0, 5)
+    time = lattice_time * time_slice
+    correlator_estimate = np.zeros(lattice_time.shape[0], bin_count)
+    correlator_estimate_error = np.zeros(lattice_time.shape[0])
+
+    for i in lattice_time:
         # calc correltaion
-        correlation = data * da.roll(data, i, 1)
-        x_zero[i] = correlation.mean()
-        x_zero_autocorr[i] = correlation.std()/length**(1/2)
+        correlator = data * da.roll(data, i, 2)
+        correlator_estimate[i] = correlator.mean(2).mean(1).compute()
 
-    X = t
-    Xerr = np.zeros(X.shape)+1
-    Y = x_zero
-    Yerr = x_zero_autocorr
-    print(X, Y, Xerr, Yerr)
+        # rebin
+        uncorrelated_correlator = correlator.mean(1)
 
-    scipymodel = scipy.odr.Model(f)
-    fitData = scipy.odr.RealData(X, Y, sy=Yerr)
-    odr = scipy.odr.ODR(fitData, scipymodel, beta0=[0, 1, -1, 0])
-    output = odr.run()
-    #output.pprint()
+        # calc err
+        error = (
+            da.sum((uncorrelated_correlator - da.mean(uncorrelated_correlator, 0))**2, 0)
+            / ((bin_count - 1) * bin_count)
+        ) ** (1 / 2)
+        correlator_estimate_error[i] = error.mean().compute()
+
+    delta_energys = np.zeros(128)
     
 
-    print(output.beta)
+    resample_size_precentage = 8
+    for i in range(0, delta_energys.shape[0]):
+        correlator_estimate_sample_estimate = da.zeros(lattice_time.shape[0])
+        for i in lattice_time:
+            correlator_estimate_sample_estimate[i] = da.choice(correlator_estimate[i], size=resample_size, replace=True).mean()
+        model = Model(exponentialFunction)
+        real_data_cese = RealData(time, correlator_estimate_sample_estimate) #---------------------- Welchen Fehler????
+        odr = ODR(real_data_cese, model, beta0=[0, 1, -1, 0])
+        output = odr.run()
+        delta_energys[i] = output.beta[2]
 
+        
+    d_E = delta_energys.mean()
+    print(d_E)
+
+
+    #fig, ax = plt.subplots()
+
+    #ax.errorbar(time, correlator_estimate, correlator_estimate_error)
+    #ax.set_yscale("log")
+    #print(correlator_estimate_error)
     
-
-    fig, ax = plt.subplots()
-    ax.errorbar(X, Y, Yerr, fmt=",")
-    ax.plot(X, f(output.beta, X))
-    ax.set_yscale("log")
-    plt.show()
+    #plt.show()
 
 
-autoCorrelationErrorPerBinSize()
-#calcCorrelation()
+#autoCorrelationErrorPerBinSize()
+calcCorrelation()
