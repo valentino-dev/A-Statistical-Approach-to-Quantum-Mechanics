@@ -54,40 +54,31 @@ def autoCorrelationErrorPerBinSize():
     print(data.shape)
 
     # calc correltaion
-    correlation = data * da.roll(data, 1, 1)
-    print(correlation)
+    correlation = da.mean(data * da.roll(data, 1, 1), 1).compute()
+    print("Configurations: ", correlation.shape[0])
 
     # rebin and calc error
-    bin_sizes = 2 ** np.arange(1, int(np.log2(int(correlation.shape[0]))))
-    # bin_sizes = np.arange(1, correlation.shape[0], 10)
-    print(type(bin_sizes))
-    std_of_bins = np.zeros((bin_sizes.shape[0], correlation.shape[1]))
-    print(std_of_bins)
-    for i in range(std_of_bins.shape[0]):
-        print("i:", i)
+    bin_sizes = 2 ** np.arange(1, int(np.log2(int(data.shape[0]))))
+    deltas = np.zeros(bin_sizes.shape[0])
+    for i in range(deltas.shape[0]):
+        print("i: ", i)
         corr_shape = (
-            correlation.shape[0] / bin_sizes[i],
-            bin_sizes[i],
-            correlation.shape[1],
+            int(correlation.shape[0] / bin_sizes[i]),
+            bin_sizes[i]
         )
+        print("Corr Shape: ", corr_shape)
         correlation_bined = da.reshape(correlation, corr_shape)
-        correlation_bined_mean = correlation_bined.mean(1)
+        cb_mean = da.mean(correlation_bined, 1)
+        cbm_mean = da.mean(cb_mean)
+        delta = (da.sum((cb_mean-cbm_mean)**2)/(cb_mean.shape[0]*(cb_mean.shape[0]-1)))**(1/2)
 
-        std = (
-            da.sum(correlation_bined_mean**2 - da.mean(correlation_bined_mean, 0), 0)
-            / (correlation_bined_mean.shape[0] - 1)
-            / correlation_bined_mean.shape[0] ** (1 / 2)
-        )
-        # std = da.std(correlation_bined_mean, 0)/correlation_bined.shape[0]
-        # print(std.dask)
-        print(std_of_bins.shape[0] - i)
-        std_of_bins[i, :] = std.compute()[:]
-        # std_of_bins[i] = std.mean().compute()
+        print(deltas.shape[0] - i)
+        deltas[i, :] = delta.compute()
 
     # plot
     X = bin_sizes[1:-3]
     Xerr = np.zeros(X.shape)
-    Y = std_of_bins.mean(1)[1:-3]
+    Y = deltas.mean(1)[1:-3]
     Yerr = np.zeros(Y.shape)
     # table = Table(X, Xerr, Y, Yerr, "Correlation Error per bin size", "bin size", r"$\sigma_x$")
 
@@ -100,6 +91,9 @@ def autoCorrelationErrorPerBinSize():
     ax.plot(X, Y)
     plt.show()
 
+def f(beta, x):
+    return beta[0]+beta[1]*np.exp(beta[2]*x+beta[3])
+
 
 def calcCorrelation():
     # read and crop data
@@ -109,44 +103,41 @@ def calcCorrelation():
     data = data[:length, :]
     print(data.shape)
 
-    fig, ax = plt.subplots()
-    tao = np.arange(1, 5)
+    tao = np.arange(0, 5)
     dt = 0.5
     t = tao * dt
     x_zero = np.zeros(tao.shape[0])
+    x_zero_autocorr = np.zeros(tao.shape[0])
 
-    for i in range(1, 5):
+    for i in range(0, 5):
         # calc correltaion
         correlation = data * da.roll(data, i, 1)
-        x_zero = correlation.mean()
+        x_zero[i] = correlation.mean()
+        x_zero_autocorr[i] = correlation.std()/length**(1/2)
 
-        # rebin and calc error
-        bin_sizes = 10 ** np.arange(1, int(np.log10(int(correlation.shape[0]))))
-        std_of_bins = np.zeros((bin_sizes.shape[0]))
-        corr_shape = (
-            correlation.shape[0] / bin_sizes[i],
-            bin_sizes[i],
-            correlation.shape[1],
-        )
-        correlation_bined = da.reshape(correlation, corr_shape)
-        correlation_bined_mean = correlation_bined.mean(1)
-        std = da.std(correlation_bined_mean, 0) / correlation_bined.shape[0]
-        err = std.mean().compute()
-        # ax.errorbar(t, correlation[])
+    X = t
+    Xerr = np.zeros(X.shape)+1
+    Y = x_zero
+    Yerr = x_zero_autocorr
+    print(X, Y, Xerr, Yerr)
 
-    # plot
-    # X = bin_sizes[:-3]
-    # Xerr = np.zeros(X.shape)
-    # Y = std_of_bins.mean(1)[:-3]
-    # Yerr = np.zeros(Y.shape)
-    # table = Table(X, Xerr, Y, Yerr, "Correlation Error per bin size", "bin size", r"$\sigma_x$")
+    scipymodel = scipy.odr.Model(f)
+    fitData = scipy.odr.RealData(X, Y, sy=Yerr)
+    odr = scipy.odr.ODR(fitData, scipymodel, beta0=[0, 1, -1, 0])
+    output = odr.run()
+    #output.pprint()
+    
 
-    # fig, ax = plt.subplots()
-    # for i in [10, 13, 15, 110, 123, 400]:
-    # ax.plot(bin_sizes[:-3], std_of_bins[:-3, i])
-    # ax = plotData(ax, table, polyfit=0, fmt="x")
-    # ax = setSpace(ax, table)
-    plt.savefig("plots/CorrelationErrorPerBinSizeMean.pdf", dpi=500)
+    print(output.beta)
+
+    
+
+    fig, ax = plt.subplots()
+    ax.errorbar(X, Y, Yerr, fmt=",")
+    ax.plot(X, f(output.beta, X))
+    ax.set_yscale("log")
+    plt.show()
 
 
 autoCorrelationErrorPerBinSize()
+#calcCorrelation()
