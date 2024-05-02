@@ -134,6 +134,44 @@ def binCorrelator(correlator, bin_size):
 
     return bined_correlator.compute(), error.compute()
 
+def correlator(sites: np.ndarray, tao: float) -> np.ndarray:
+    return (sites*da.roll(sites, tao)).mean(1)
+
+def binObservables(observables: np.ndarray, bin_size: int) -> np.ndarray:
+    return da.reshape(observables, observables.shape[0]/bin_size, bin_size).mean(1)
+
+def varianz(observables: np.ndarray) -> float:
+    return ((observables - observables.mean())**2).sum()/(observables.shape[0]-1)
+
+def error(observables: np.ndarray) -> float:
+    return (varianz(observables)/observables.shape[0])**(1/2)
+
+def delta_Energy():
+    data = dd.read_csv(path, sep=";", header=None).to_dask_array(lengths=True)
+    length = 2 ** (da.floor(da.log2(data.shape[0])))
+    bin_count = length / bin_size
+    print(f"{length} sites are going to be used")
+
+    lattice_times = np.arange(0, 5)
+
+    data = data[:length, :]
+
+    correlated_correlator = np.zeros((lattice_times.shape[0], data.shape[0]))
+    uncorrelated_correlator = np.zeros((lattice_times.shape[0], data.shape[0]))
+    for i in lattice_times:
+        correlated_correlator[i,:] = correlator(data, i)
+        uncorrelated_correlator[i,:] = binObservables(correlated_correlator[i,:], 256)
+    
+    
+    energies = da.zeros(20000)
+    for i in range(energies.shape[0]):
+        chosen_lattice_times_index_mask = np.choice(np.arange(lattice_times.shape[0]))
+        chosen_lattice_times_index_mask = np.choice(np.arange(uncorrelated_correlator.shape[0]))
+        chosen_uncorrelated_correlator = 
+        curve_fit(exponentialFunction, lattice_times, np.choice(uncorrelated_correlator))
+    
+
+
 
 def calcCorrelation():
     bin_size = 256
