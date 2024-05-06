@@ -5,7 +5,7 @@ import dask.dataframe as dd
 import dask.array as da
 import scipy.odr
 import sys
-import scipy.optimize import curve_fit
+from scipy.optimize import curve_fit
 
 # sys.path.append("/home/angelo/Git/olib")
 # from olib import *
@@ -114,17 +114,23 @@ def binData(data, bin_count, bin_size):
     return da.reshape(data, (bin_count, bin_size))
 
 
-def exponentialFunction(beta, x):
-    return beta[0] + beta[1] * np.exp(beta[2] * x + beta[3])
+def exponentialFunction(x, beta):
+    return beta[0] + beta[1] * np.exp(-beta[2] * x + beta[3])
 
 
-def f(beta, x):
+def exponentialFunction(x, a, b, c, d):
+    return a + b * np.exp(-c * x + d)
+
+
+def f(x, beta):
     return beta[0] + beta[1] * np.exp(beta[2] * x + beta[3])
 
 
 def binCorrelator(correlator, bin_size):
     bin_count = correlator.shape[0] / bin_size
-    bined_correlator = da.reshape(data, (bin_count, bin_size, correlator.shape[-1]))
+    bin_shape = (bin_count, bin_size, correlator.shape[-1])
+    print(bin_shape)
+    bined_correlator = da.reshape(correlator, bin_shape)
     bin_estimate = bined_correlator.mean(1)
     observable_errors = (
         da.sum((bin_estimate - bin_estmiate.mean(0) ** 2)) / (bin_count - 1) / bin_count
@@ -134,17 +140,24 @@ def binCorrelator(correlator, bin_size):
 
     return bined_correlator.compute(), error.compute()
 
+
 def correlator(sites: np.ndarray, tao: float) -> np.ndarray:
-    return (sites*da.roll(sites, tao)).mean(1)
+    return (sites * da.roll(sites, tao)).mean(1)
+
 
 def binObservables(observables: np.ndarray, bin_size: int) -> np.ndarray:
-    return da.reshape(observables, observables.shape[0]/bin_size, bin_size).mean(1)
+    return da.reshape(observables, observables.shape[0] / bin_size, bin_size).mean(1)
+
 
 def varianz(observables: np.ndarray) -> float:
-    return ((observables - observables.mean())**2).sum()/(observables.shape[0]-1)
+    return ((observables - observables.mean()) ** 2).sum() / (observables.shape[0] - 1)
+
 
 def error(observables: np.ndarray) -> float:
-    return (varianz(observables)/observables.shape[0])**(1/2)
+    return (varianz(observables) / observables.shape[0]) ** (1 / 2)
+
+
+"""
 
 def delta_Energy():
     data = dd.read_csv(path, sep=";", header=None).to_dask_array(lengths=True)
@@ -170,7 +183,7 @@ def delta_Energy():
         chosen_uncorrelated_correlator = 
         curve_fit(exponentialFunction, lattice_times, np.choice(uncorrelated_correlator))
     
-
+"""
 
 
 def calcCorrelation():
@@ -183,35 +196,59 @@ def calcCorrelation():
     bin_count = length / bin_size
     print(f"{length} sites are going to be used")
 
+    # cutting and binning data
     data = data[:length, :]
-    data = da.reshape(data, (bin_count, bin_size, data.shape[1]))
-
+    data_bin = da.reshape(data, (bin_count, bin_size, data.shape[1]))
     lattice_time = np.arange(0, 5)
-    time = lattice_time * time_slice
-    correlator_estimate = da.zeros(lattice_time.shape[0], bin_count)
-    correlator_estimate_error = da.zeros(lattice_time.shape[0])
+    correlator_bin = da.zeros(
+        (lattice_time.shape[0], data_bin.shape[0], data_bin.shape[1])
+    )
+    for i in range(lattice_time.shape[0]):
+        correlator_bin[i] = (data_bin * da.roll(data_bin, i, 2)).mean(2)
+    correlator_estimate = correlator_bin.mean(2)
+    correlator_estimate_error = (
+        (((correlator_bin - da.expand_dims(correlator_estimate, 2)) ** 2).sum(2))
+        / (bin_size - 1)
+        / bin_size
+    ) ** (1 / 2)
 
-    for i in lattice_time:
-        # calc correltaion
-        correlator = data * da.roll(data, i, 2)
-        correlator_estimate[i], correlator_estimate_error[i] = binCorrelator(correlator, bin_size)
+    delta_energies = da.zeros(10)
+    resample_size = correlator_estimate.size
 
+    for i in range(0, delta_energies.shape[0]):
+        time_indecies = np.array(
+            da.floor(
+                da.random.random_sample((resample_size)) * correlator_estimate.shape[0]
+            ).compute(),
+            dtype=int,
+        )
+        correlator_indecies = np.array(
+            da.floor(
+                da.random.random_sample((resample_size)) * correlator_estimate.shape[1]
+            ).compute(),
+            dtype=int,
+        )
+        correlator_estimate_sample_estimate = correlator_estimate.compute()[
+            time_indecies, correlator_indecies
+        ]
+        correlator_estimate_sample_estimate_error = correlator_estimate_error.compute()[time_indecies, correlator_indecies]
 
-    delta_energys = da.zeros(20000)
+        popt, pcov = curve_fit(
+            exponentialFunction,
+            time_indecies*time_slice,
+            correlator_estimate_sample_estimate,
+            p0=np.array([0, 1, 1, 0]), sigma = correlator_estimate_sample_estimate_error
+        )
 
-    resample_size = correlator_estimate.shape[1]
+        delta_energies[i] = popt[2]
+        print(popt)
 
-    for i in range(0, delta_energys.shape[0]):
-        correlator_estimate_sample_estimate = da.zeros(lattice_time.shape[0])
-        for i in lattice_time:
-            correlator_estimate_sample_estimate[i] = da.choice(
-                correlator_estimate[i], size=resample_size, replace=True
-            ).mean()
-
-        curve_fit(exponentialFunction, lattice_time, correlator_estimate_sample_estimate)
-
-    d_E = delta_energys.mean()
-    print(d_E)
+    delta_E = delta_energies.mean().compute()
+    delta_E_error = (
+        (((delta_energies - delta_E) ** 2).sum() / (delta_energies.shape[0] - 1))
+        ** (1 / 2)
+    ).compute()
+    print(f"dE={delta_E}+-{delta_E_error}")
 
     # fig, ax = plt.subplots()
 
