@@ -1,7 +1,3 @@
-
-
-
-
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -22,123 +18,141 @@ plt.rcParams.update({"text.usetex": True, "font.family": "serif"})
 path = "data/data_RS100_CONF8192_SII1.csv"
 # path = "data/data_fig5_100k.csv"
 
-
+def delta(obs: np.ndarray, ax=0):
+    return np.std(obs, ddof=1, axis=ax)/np.sqrt(obs.shape[ax])
+    
 def autoCorrelationErrorPerBinSize():
     # read and crop datau
 
-    '''
+    """
     data = dd.read_csv(path, sep=";", header=None).to_dask_array(lengths=True)
-    length = 2 ** (da.floor(da.log2(data.shape[0])))
-    print(length)
-    data = data[:length, :]
-    print(data.shape)
-
-    # calc correltaion
-    correlator = (data * da.roll(data, 10, 1)).mean(1)
-    '''
+    correlator = (data * da.roll(data, 1, 1)).mean(1).compute()
+    """
     path = "data/correlation.csv"
-    correlator = da.reshape(dd.read_csv(path, sep=";", header=None).to_dask_array(lengths=True), (5000, 26))[:, 0]
-    length = 2 ** (da.floor(da.log2(correlator.shape[0])))
-    correlator = correlator[:length]
+    correlator = da.reshape(
+        dd.read_csv(path, sep=";", header=None).to_dask_array(lengths=True), (5000, 26)
+    )[:, 0]
 
-    # rebin and calc error
-    bin_sizes = 2 ** np.arange(1,  int(np.log2(int(correlator.shape[0]))))
-    bin_count = correlator.shape[0] / bin_sizes
-    print(bin_count)
+    # Hier die größe der bins angeben :
+
+    # bin_sizes = 2 ** np.arange(1,  int(np.log2(int(correlator.shape[0]))))
+    bin_sizes = 2 ** np.arange(1, 1 + int(np.log2(256)))
+    # bin_sizes = np.arange(1, 100, 1)
+
+    bin_count = np.floor(correlator.shape[0] / bin_sizes)
+    lengths = np.array(bin_count * bin_sizes, dtype=np.uint)
+    print(lengths)
     deltas = np.zeros(bin_sizes.shape[0])
-    for i in range(deltas.shape[0]):
+    for i in range(bin_sizes.shape[0]):
         print("i: ", i)
-        print(bin_sizes[i], bin_count[i])
-
-        bined_correlator = da.reshape(correlator, (bin_count[i], bin_sizes[i])).mean(1)
-        delta = da.sqrt(
-            ((bined_correlator - bined_correlator.mean()) ** 2).sum()
-            / (bin_count[i] - 1) / bin_count[i]
-        )
-        deltas[i] = delta.compute()
         
+        # cropping to resize
+        cropped_correlator = correlator[: int(lengths[i])]
+
+        # resize
+        bined_correlator = np.reshape(
+            cropped_correlator, (bin_count[i], bin_sizes[i])
+        ).mean(1)
+
+        # Fehler berechnen
+        deltas[i] = delta(bined_correlator)
+
     fig, ax = plt.subplots()
     ax.scatter(bin_sizes, deltas)
     plt.show()
 
 
-
-
 def f(x, beta):
     return beta[0] + beta[1] * np.exp(beta[2] * x + beta[3])
 
-def calcCorrelation():
-    bin_size = 8
-    time_slice = 0.5
 
-    # read and crop data
-    data = dd.read_csv(path, sep=";", header=None).to_dask_array(lengths=True)
-    length = 2 ** (da.floor(da.log2(data.shape[0])))
-    bin_count = length / bin_size
-    print(f"{length} sites are going to be used")
+def func(x, b1, b2):
+    return b1 * np.exp(-b2 * x)
 
-    # cutting and binning data
-    data = data[:length, :]
-    data_bin = da.reshape(data, (bin_count, bin_size, data.shape[1]))
-    lattice_time = np.arange(0, 5)
 
-    correlator_bin = da.zeros(
-        (lattice_time.shape[0], data_bin.shape[0], data_bin.shape[1])
+def pickIndecies(shape, resample_size):
+    # choosing random correlation times
+    time_indecies = np.array(
+        np.floor(np.random.random_sample((resample_size)) * shape[0]),
+        dtype=np.uint,
     )
 
+    # choosing random uncorrelated correlators
+    correlator_indecies = np.array(
+        np.floor(np.random.random_sample((resample_size)) * shape[1]),
+        dtype=np.uint,
+    )
+
+    return time_indecies, correlator_indecies
+
+
+def pickSample(obs: np.ndarray, obs_error: np.ndarray, size):
+    time_idx, obs_idx = pickIndecies(obs.shape, size)
+    sample = obs[time_idx, obs_idx]
+    error_sample = obs_error[time_idx, obs_idx]
+    return sample, error_sample, time_idx
+
+
+def calcCorrelation():
+    time_slice = 0.5
+    lattice_time = np.arange(0, 5)
+
+    data = dd.read_csv(path, sep=";", header=None).to_dask_array(lengths=True).compute()
+    correlator = np.zeros((lattice_time.shape[0], data.shape[0]))
+
     for i in range(lattice_time.shape[0]):
-        correlator_bin[i] = (data_bin * da.roll(data_bin, i, 2)).mean(2)
+        correlator[i] = (data * np.roll(data, i, 1)).mean(1)
 
-    correlator_estimate = correlator_bin.mean(2)
-    correlator_estimate_error = (
-        (((correlator_bin - da.expand_dims(correlator_estimate, 2)) ** 2).sum(2))
-        / (bin_size - 1)
-        / bin_size
-    ) ** (1 / 2)
+    """
+    path = "data/correlation.csv"
+    correlator = (
+        da.reshape(
+            dd.read_csv(path, sep=";", header=None).to_dask_array(lengths=True),
+            (5000, 26),
+        )
+        .compute()
+        .T[lattice_time, :]
+    )
+    """
 
-    delta_energies = da.zeros(10)
-    resample_size = correlator_estimate.size
+    print(type(correlator))
+    print(correlator.shape)
 
+    bin_size = 16
+    bin_count = int(correlator.shape[1] / bin_size)
+    length = bin_count * bin_size
+
+    # cutting and binning data
+    correlator = correlator[:, :length]
+    correlator = np.reshape(correlator, (lattice_time.shape[0], bin_count, bin_size))
+    uncorrelated_correlator = correlator.mean(2)
+    uncorrelated_correlator_error = delta(correlator, axis=2)
+
+    delta_energies = np.zeros(1000)
+    resample_size = correlator.size
+
+    # Bootstraping
     for i in range(0, delta_energies.shape[0]):
+        print(i, delta_energies.shape[0])
 
-        # choosing random correlation times
-        time_indecies = np.array(
-            da.floor(
-                da.random.random_sample((resample_size)) * correlator_estimate.shape[0]
-            ).compute(),
-            dtype=int,
+        # chose random sample
+        correlator_sample, correlator_error_sample, time_idx = pickSample(
+            uncorrelated_correlator, uncorrelated_correlator_error, resample_size
         )
-
-        # choosing random uncorrelated correlators
-        correlator_indecies = np.array(
-            da.floor(
-                da.random.random_sample((resample_size)) * correlator_estimate.shape[1]
-            ).compute(),
-            dtype=int,
-        )
-        correlator_estimate_sample_estimate = correlator_estimate.compute()[
-            time_indecies, correlator_indecies
-        ]
-        correlator_estimate_sample_estimate_error = correlator_estimate_error.compute()[
-            time_indecies, correlator_indecies
-        ]
-
+        
+        # fit to sample
         popt, pcov = curve_fit(
-            exponentialFunction,
-            time_indecies * time_slice,
-            correlator_estimate_sample_estimate,
-            p0=np.array([0, 1, 1, 0]),
-            sigma=correlator_estimate_sample_estimate_error,
+            func,
+            time_idx * time_slice,
+            correlator_sample,
+            p0=np.array([1, 1]),
+            sigma=correlator_error_sample,
         )
 
-        delta_energies[i] = popt[2]
-        print(popt)
+        delta_energies[i] = popt[1]
 
-    delta_E = delta_energies.mean().compute()
-    delta_E_error = (
-        (((delta_energies - delta_E) ** 2).sum() / (delta_energies.shape[0] - 1))
-        ** (1 / 2)
-    ).compute()
+    delta_E = delta_energies.mean()
+    delta_E_error = np.std(delta_energies, ddof=1)
     print(f"dE={delta_E}+-{delta_E_error}")
 
 
