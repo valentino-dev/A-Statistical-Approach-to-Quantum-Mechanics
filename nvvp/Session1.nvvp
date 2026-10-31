@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<session version="2" name="Session1.nvvp" hscale="1.0E-6" normalize="false">
+<timelineoptions enabletimerange="false" start="-1" end="-1" numsegmentsuvm="100" uvmisegmentenabled="true"/>
+<executable file="/home/Angelo/Git/A-Statistical-Approach-to-Quantum-Mechanics/src/simulation.cu" cwd="/home/Angelo/Git/A-Statistical-Approach-to-Quantum-Mechanics" args=" &#34;data/data_nvvptest.csv&#34; &#34;1&#34; &#34;1&#34; &#34;0&#34; &#34;2&#34; &#34;10&#34; &#34;512&#34; &#34;1&#34; &#34;100&#34; &#34;0.5&#34; &#34;0.5&#34; &#34;0.0&#34; &#34;2.0&#34; &#34;0.0&#34;" profileonstart="true" concurrentkernels="true" apitrace="true" environmentprofiling="false" uvmprofiling="true" cpuprofiling="false" allocationsTracking="false" openaccprofiling="true" openmpprofiling="false" threadtracking="false" devicebuffersize="3" cdpbuffersize="8"><envs></envs><multiProcess type="0" rumMPS="false"/></executable>
+<expert><columnprops></columnprops>
+</expert>
+<analysis guided="false"><visitedstages><stage name="TIMELINE"/></visitedstages></analysis>
+<expertsystem current="INTRO"><visited><stage name="INTRO"/></visited></expertsystem>
+<vruler width="200"/>
+<hruler>
+</hruler>
+</session>

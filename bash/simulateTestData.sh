@@ -1,6 +1,6 @@
 #!/bin/bash
 
-nvcc src/simulation.cu -o "bin/simulation.out"
+nvcc src/simulation/simulation.cu -o "bin/simulation.out"
 a=0.5
 m0=0.5
 lambda=0.0

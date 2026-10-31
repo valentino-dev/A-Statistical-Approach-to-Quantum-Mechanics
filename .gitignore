@@ -1,2 +1,4 @@
-*.csv
 *.out
+.vs/
+__pycache__/
+*.pyc

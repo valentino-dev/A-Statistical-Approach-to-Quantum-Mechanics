@@ -23,11 +23,7 @@ double MU_SQ = 2.0;          // before (4.16) Fig. 4
 constexpr double LAMBDA = 0; // before (4.16) Fig. 4
 double ff = 2;
 
-<<<<<<< HEAD
 double A = 0.5;             // before (4.16) Fig. 4
-=======
-double A = 1.0;             // before (4.16) Fig. 4
->>>>>>> 4fa46fc (strawman)
 constexpr double M_0 = 0.5; // before (4.16) Fig. 4
 double DELTA = 2 * sqrt(A); // 2*sqrt(a) (4.9)
 constexpr int N = 10;       // n_tilde = 10 (4.10)
